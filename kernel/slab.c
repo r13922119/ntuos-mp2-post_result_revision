@@ -133,7 +133,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
   // "kmem_cache as a slab" is full. check the others.
   struct slab *slab;
   enum STATE oldstate; 
-  if(!list_empty(&cache->partial)){     // [PARTIAL] does a "partial" slab exist?
+  if(!list_empty(&cache->partial)){    // [PARTIAL] does a "partial" slab exist?
     slab = list_first_entry(&cache->partial, struct slab, link);
     oldstate = PARTIAL;
   }else if(!list_empty(&cache->free)){ // [FREE] does a "free" slab exist?
