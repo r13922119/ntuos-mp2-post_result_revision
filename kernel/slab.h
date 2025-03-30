@@ -2,27 +2,28 @@
 
 #include "spinlock.h"
 #include "types.h"
+#include "list.h"
 
-// struct run {
-//   struct run *next;
-// };
+struct run {
+  struct run *next;
+};
 
 /**
  * struct slab - Represents a slab in the slab allocator.
  * @freelist: Linked list of free objects.
+ * @link: with link.next and link.prev pointing to "link" of the other slabs in the list; also, it is an empty list only when newly created
+ * @num_objs_in_use: number of allocated objects.
+ * 
+ * when freelist == NULL, the slab is full; otherwise, it is partial or free
+ * when num_objs_in_use == 0, the slab is free; otherwise, it is partial or full
  */
 struct slab
 {
-  // TODO: Choose the type of freelist from
-  //    1. void **
-  //    2. struct run *
-  // <ptr> freelist;             // Linked list of free objects
-
-  // TODO: Design how to link the slabs
-  // ...
-
-  // TODO: you can add other members
-  // ...
+  struct run *freelist;             // Linked list of free objects
+  // Link the slabs
+  struct list_head link;
+  // Other members
+  uint16 num_objs_in_use;
 };
 
 /**
@@ -30,6 +31,14 @@ struct slab
  * @name: Cache name (e.g., "file").
  * @object_size: Size of a single object.
  * @lock: Lock for cache management.
+ * @full: Completely allocated slabs.
+ * @partial: Partially allocated slabs.
+ * @free: Free slabs.
+ * @num_avail_slab: number of available ("partial" or "free") slabs.
+ * @freelist: linked list of free objects.
+ * 
+ * kmem_cache not only mangages all the "full/partial/free" slabs with list_head. kmem_cache itself is also a slab, we fix its slab type label to "cache" instead of "full/partial/free"
+ * however, no need "struct list_head cache;" since kmem_cache is the only slab of the "cache" type. also, no need "num_objs_in_use" since we never free "kmem_cache the slab". but we do need a freelist of objects like the other slabs!
  */
 struct kmem_cache
 {
@@ -37,10 +46,13 @@ struct kmem_cache
   uint object_size;     // Size of a single object
   struct spinlock lock; // Lock for cache management
 
-  // TODO: Add slab list(s)
-  // <TYPE> full     // Completely allocated slabs (Optional)
-  // <TYPE> partial  // Partially allocated slabs
-  // <TYPE> free     // Free slabs (Optional)
+  // Slab list(s)
+  struct list_head full;     // Completely allocated slabs (Optional)
+  struct list_head partial;  // Partially allocated slabs
+  struct list_head free;     // Free slabs (Optional)
+
+  uint32 num_avail_slab;
+  struct run *freelist;
 };
 
 /**

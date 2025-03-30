@@ -5,6 +5,8 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "file.h"
+#include "slab.h"
 
 uint64
 sys_exit(void)
@@ -90,4 +92,9 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64 sys_printfslab(void){
+  print_kmem_cache(file_cache, fileprint_metadata);
+  return 0;
 }
