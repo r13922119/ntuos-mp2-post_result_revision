@@ -11,8 +11,8 @@ struct run {
 /**
  * struct slab - Represents a slab in the slab allocator.
  * @freelist_offset: Linked list of free objects.
- * @info.@link: with link.next and link.prev pointing to "link" of the other slabs in the list; also, it is an empty list only when newly created
- * @info.@num_objs_in_use: number of allocated objects.
+ * @meta.@link: with link.next and link.prev pointing to "link" of the other slabs in the list; also, it is an empty list only when newly created
+ * @meta.@num_objs_in_use: number of allocated objects.
  * 
  * when freelist_offset == 0, the slab is full; otherwise, it is partial or free
  * when num_objs_in_use == 0, the slab is free; otherwise, it is partial or full
