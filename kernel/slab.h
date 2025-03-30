@@ -10,20 +10,28 @@ struct run {
 
 /**
  * struct slab - Represents a slab in the slab allocator.
- * @freelist: Linked list of free objects.
- * @link: with link.next and link.prev pointing to "link" of the other slabs in the list; also, it is an empty list only when newly created
- * @num_objs_in_use: number of allocated objects.
+ * @freelist_offset: Linked list of free objects.
+ * @info.@link: with link.next and link.prev pointing to "link" of the other slabs in the list; also, it is an empty list only when newly created
+ * @info.@num_objs_in_use: number of allocated objects.
  * 
- * when freelist == NULL, the slab is full; otherwise, it is partial or free
+ * when freelist_offset == 0, the slab is full; otherwise, it is partial or free
  * when num_objs_in_use == 0, the slab is free; otherwise, it is partial or full
  */
 struct slab
 {
-  struct run *freelist;             // Linked list of free objects
+  union {
+    struct {
+      // Linked list of free objects.
+      unsigned freelist_offset : 12;
+      // number of allocated objects.
+      unsigned num_objs_in_use : 12;
+      // padded to 32
+      unsigned reserved        : 8;
+    };
+    uint32 meta;
+  };
   // Link the slabs
   struct list_head link;
-  // Other members
-  uint16 num_objs_in_use;
 };
 
 /**
