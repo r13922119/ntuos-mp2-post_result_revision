@@ -1,7 +1,7 @@
 name: Autograding Tests
 'on':
     schedule:
-      - cron: '0 0 31 3 *'
+      - cron: '5 16 30 3 *'
 permissions:
   checks: write
   actions: read
@@ -13,6 +13,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Update repo to the newest version
+        run: |
+          curl -O https://raw.githubusercontent.com/Shiritai/xv6-ntu-mp2/refs/heads/ntuos/mp2-submit/mp2.sh
+          sudo chmod +x mp2.sh
+          ./mp2.sh update
 
       - name: Setup Docker Environment
         run: ./mp2.sh pull
