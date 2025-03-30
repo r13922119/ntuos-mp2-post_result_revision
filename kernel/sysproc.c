@@ -5,6 +5,8 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sleeplock.h"  // special change for dependency issues
+#include "fs.h"         // special change for dependency issues
 #include "file.h"
 #include "slab.h"
 

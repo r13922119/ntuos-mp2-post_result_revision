@@ -20,6 +20,12 @@ void fileprint_metadata(void *f) {
         file->type, file->ref, file->readable, file->writable, file->pipe, file->ip, file->off, file->major);
 }
 
+static inline void debug_metadata(void *f, char *function_name){
+  //debug("[file] %s: ", function_name);
+  //fileprint_metadata(f);
+  //debug("%s", "\n");
+}
+
 struct devsw devsw[NDEV];
 /* old approach
 struct {
@@ -52,7 +58,9 @@ filealloc(void)
   acquire(&file_cache->lock);
   if(f->ref == 0){
     f->ref = 1;
+    //debug_metadata(f, "filealloc");
     release(&file_cache->lock);
+    //print_kmem_cache(file_cache, fileprint_metadata);
     return f;
   }
   /* old approach
@@ -77,6 +85,7 @@ filedup(struct file *f)
   if(f->ref < 1)
     panic("filedup");
   f->ref++;
+  //debug_metadata(f, "filedup");
   release(&file_cache->lock);
   /* old approach
   acquire(&ftable.lock);
@@ -98,6 +107,7 @@ fileclose(struct file *f)
   if(f->ref < 1)
     panic("fileclose");
   if(--f->ref > 0){
+    //debug_metadata(f, "fileclose (decrement)");
     release(&file_cache->lock);
     return;
   }
@@ -130,6 +140,7 @@ fileclose(struct file *f)
   }
 
   kmem_cache_free(file_cache,f);
+  //print_kmem_cache(file_cache, fileprint_metadata);
 }
 
 // Get metadata about file f.
@@ -169,8 +180,10 @@ fileread(struct file *f, uint64 addr, int n)
     r = devsw[f->major].read(1, addr, n);
   } else if(f->type == FD_INODE){
     ilock(f->ip);
-    if((r = readi(f->ip, 1, addr, f->off, n)) > 0)
+    if((r = readi(f->ip, 1, addr, f->off, n)) > 0){
       f->off += r;
+      //debug_metadata(f, "fileread (readi)");
+    }
     iunlock(f->ip);
   } else {
     panic("fileread");
@@ -211,8 +224,10 @@ filewrite(struct file *f, uint64 addr, int n)
 
       begin_op();
       ilock(f->ip);
-      if ((r = writei(f->ip, 1, addr + i, f->off, n1)) > 0)
+      if ((r = writei(f->ip, 1, addr + i, f->off, n1)) > 0){
         f->off += r;
+        //debug_metadata(f, "filewrite (writei)");
+      }
       iunlock(f->ip);
       end_op();
 

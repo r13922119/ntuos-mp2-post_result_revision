@@ -5,8 +5,9 @@
 #include "riscv.h"
 #include "defs.h"
 #include "slab.h"
+#include "debug.h"
 
-static enum STATE{
+enum STATE{
   DEAD = -2, NEW = -1, FREE = 0, PARTIAL = 1, FULL = 2, CACHE = 3
 };
 static inline void update_slab_state_after_alloc(struct kmem_cache *cache, struct slab *slab, enum STATE oldstate);
@@ -16,25 +17,26 @@ static inline void slab_destroy(struct slab *oldslab);
 static inline struct run *slab_alloc(struct slab *slab);
 static inline void slab_free(struct slab *slab, struct run *obj, uint object_size);
 static inline struct run *freelist_free(struct run *freelist, struct run *obj, uint object_size);
-struct run *freerange(struct run *freelist, void *obj_start, void *obj_end, uint object_size);
+struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_end, uint object_size);
 #define MAX_OBJS ((PGSIZE - sizeof(struct slab)) / cache->object_size) // computed for debug purpose only
 #define IN_CACHE_OBJ ((PGSIZE - sizeof(struct kmem_cache)) / cache->object_size) // computed for debug purpose only
 #define OBJ_FOR_EACH(objrun_type, objrun, header_type, header, obj_size) for(objrun = (objrun_type*)((char*)header + sizeof(header_type)); (char*)objrun + obj_size <= (char*)header + PGSIZE; objrun = (objrun_type*)((char*)objrun + obj_size))
 #define INIT_FREELIST(type, slab, obj_size) \
     { \
         (slab)->freelist = NULL; \
-        (slab)->freelist = freerange((slab)->freelist, (void*)((char*)slab + sizeof(type)), (void*)((char*)slab + PGSIZE), object_size); \
+        (slab)->freelist = freelist_freerange((slab)->freelist, (void*)((char*)slab + sizeof(type)), (void*)((char*)slab + PGSIZE), object_size); \
     }
 
 void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *))
 {
-  debug("[SLAB] kmem_cache { name: %s, object_size: %d, at: %p, in_cache_obj: %d }\n", cache->name, cache->object_size, cache, IN_CACHE_OBJ);
+  acquire(&cache->lock);
+  debug("[SLAB] kmem_cache { name: %s, object_size: %u, at: %p, in_cache_obj: %lu }\n", cache->name, cache->object_size, cache, IN_CACHE_OBJ);
   // print the info of the type "cache" slab, i.e., kmem_cache as a slab.
-  debug("[SLAB] \t[ cache slabs ]\n[SLAB] \t\t[ slab %p ] { freelist: %p, nxt: %p }\n", cache, cache->freelist, (uint64)0); // nxt does not mean anything here
+  debug("[SLAB] \t[ cache slabs ]\n[SLAB] \t\t[ slab %p ] { freelist: %p, nxt: %p }\n", cache, cache->freelist, NULL); // nxt does not mean anything here
   struct run *obj;
-  int idx = 0;
+  uint idx = 0;
   OBJ_FOR_EACH(struct run, obj, struct kmem_cache, cache, cache->object_size){
-    debug("[SLAB] \t\t\t[ idx %d ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, obj->next);
+    debug("[SLAB] \t\t\t[ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, obj->next);
     slab_obj_printer((void*)obj);
     debug("%s", "} }\n");
     idx++;
@@ -47,7 +49,7 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
     struct run *obj;
     int idx = 0;
     OBJ_FOR_EACH(struct run, obj, struct slab, entry, cache->object_size){
-      debug("[SLAB] \t\t\t[ idx %d ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, ((struct run*)obj)->next);
+      debug("[SLAB] \t\t\t[ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, ((struct run*)obj)->next);
       slab_obj_printer((void*)obj);
       debug("%s", "} }\n");
       idx++;
@@ -55,12 +57,13 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
   }
   // as the spec requested, we do not print the "full" or "free" slabs even if we maintain lists for them.
   debug("%s", "[SLAB] print_kmem_cache end\n");
+  release(&cache->lock);
 }
 
 struct kmem_cache *kmem_cache_create(char *name, uint object_size)
 {
   if(object_size < sizeof(struct run)){
-    debug("[slab] kmem_cache_create: object size %d is too small, must be at least %d to create cache %s\n", object_size, sizeof(struct run), name);
+    debug("[slab] kmem_cache_create: object size %u is too small, must be at least %lu to create cache %s\n", object_size, sizeof(struct run), name);
     return NULL;
   }
   // allocate a page
@@ -84,7 +87,7 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
     return NULL;
   }
   // print info
-  debug("[SLAB] New kmem_cache (name: %s, object size: %d bytes, at: %p, max objects per slab: %d, support in cache obj: %d) is created\n", name, object_size, cache, MAX_OBJS, IN_CACHE_OBJ);
+  debug("[SLAB] New kmem_cache (name: %s, object size: %u bytes, at: %p, max objects per slab: %lu, support in cache obj: %lu) is created\n", name, object_size, cache, MAX_OBJS, IN_CACHE_OBJ);
   return cache;
 }
 
@@ -158,6 +161,7 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
   if(slab_type == (uint64)cache){
     // free the object
     cache->freelist = freelist_free(cache->freelist, obj, cache->object_size);
+    debug("[SLAB] Free %p in slab %p (%s)\n[SLAB] End of free\n", obj, cache, cache->name);
     release(&cache->lock); // release the lock before return
     return;
   }
@@ -166,6 +170,7 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
   enum STATE oldstate = (slab->freelist) ? PARTIAL : FULL;
   // Free the object.
   slab_free(slab, obj, cache->object_size);
+  debug("[SLAB] Free %p in slab %p (%s)\n", obj, slab, cache->name);
   update_slab_state_after_free(cache, slab, oldstate);
   debug("%s", "[SLAB] End of free\n");
   release(&cache->lock); // release the lock before return
@@ -179,24 +184,23 @@ static inline void update_slab_state_after_alloc(struct kmem_cache *cache, struc
   // enum STATE newstate = (!slab->freelist) ? FULL : PARTIAL;
   if(!slab->freelist){
     list_move(&slab->link, &cache->full);       // (new/free/partial,full) ~> move to full
-    if(oldstate == FREE || oldstate == PARTIAL) 
+    if(oldstate == FREE || oldstate == PARTIAL)
       cache->num_avail_slab--;                  // (free,full) or (partial,full) ~> from avail to not avail
   }else{
     if(oldstate == NEW || oldstate == FREE){
       list_move(&slab->link, &cache->partial);  // (new/free,partial) ~> move to partial
     }
-    if(oldstate == NEW){
+    if(oldstate == NEW)
       cache->num_avail_slab++;                  // (new,partial) ~> from not avail to avail
-    }
                                                 // (partial,partial) ~> no state changes
   }
 }
 
 static inline void update_slab_state_after_free(struct kmem_cache *cache, struct slab *slab, enum STATE oldstate){
   // update the slab state from {partial, full} to {dead, free, partial}, denoted ([from],[to]). other transitions are impossible for a freeing.
-  // enum STATE newstate = ...? (here we note that when avail slabs are enough, i.e., > MIN_AVAIL_SLAB, kfree more aggressively)
+  // enum STATE newstate = ...? (here we note that when avail slabs are enough, i.e., + this one > MIN_AVAIL_SLAB, kfree more aggressively)
   if(!slab->num_objs_in_use){
-    if(cache->num_avail_slab > MP2_MIN_AVAIL_SLAB){           // DEAD;
+    if(cache->num_avail_slab + 1 > MP2_MIN_AVAIL_SLAB){       // DEAD;
       slab_destroy(slab);                       // (partial/full,dead) ~> slab_destroy, i.e., kalloc() page freed
       debug("[SLAB] slab %p (%s) is freed due to save memory\n", slab, cache->name);
       if(oldstate == PARTIAL)
@@ -217,7 +221,7 @@ static inline void update_slab_state_after_free(struct kmem_cache *cache, struct
 
 static inline struct slab *slab_create(uint object_size){
   if (object_size < sizeof(struct run)) {
-    debug("[slab] slab_create: object size %d is too small, must be at least %d\n", object_size, sizeof(struct run));
+    debug("[slab] slab_create: object size %u is too small, must be at least %lu\n", object_size, sizeof(struct run));
     return NULL;
   }
   struct slab *newslab = (struct slab*)kalloc();
@@ -232,7 +236,8 @@ static inline struct slab *slab_create(uint object_size){
     kfree((void*)newslab);
     return NULL;
   }
-  debug("[slab] slab_create: new slab (object size: %d bytes, at: %p) is created\n", object_size, newslab);
+  newslab->num_objs_in_use = 0;
+  debug("[slab] slab_create: new slab (object size: %u bytes, at: %p) is created\n", object_size, newslab);
   return newslab;
 }
 
@@ -266,10 +271,10 @@ static inline struct run *freelist_free(struct run *freelist, struct run *obj, u
   return freelist;
 }
 
-struct run *freerange(struct run *freelist, void *obj_start, void *obj_end, uint object_size){
+struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_end, uint object_size){
   char *obj = obj_start;
   if(obj + object_size > (char*)obj_end){
-    debug("%s", "[slab] freerange: obj_start should be a smaller address than obj_end\n");
+    debug("%s", "[slab] freelist_freerange: obj_start should be a smaller address than obj_end\n");
     return freelist;
   }
   for(; obj + object_size <= (char*)obj_end; obj += object_size){

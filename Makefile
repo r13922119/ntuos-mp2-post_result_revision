@@ -149,6 +149,7 @@ UPROGS=\
 	$U/_oap\
 	$U/_tee\
 	$U/_mp2\
+	$U/_printfslab\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
