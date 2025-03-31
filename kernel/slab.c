@@ -20,18 +20,18 @@ static inline struct run *freelist_free(struct run *freelist, struct run *obj, u
 struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_end, uint object_size);
 #define MAX_OBJS ((PGSIZE - sizeof(struct slab)) / cache->object_size) // computed for debug purpose only
 #define IN_CACHE_OBJ ((PGSIZE - sizeof(struct kmem_cache)) / cache->object_size) // computed for debug purpose only
-#define GET_FREELIST(s) ((s->freelist_offset) ? ((struct run*)((char*)s + (s)->freelist_offset)) : NULL)
-#define SET_FREELIST(s, objrun) ((s)->freelist_offset = ((objrun) ? ((unsigned)(((char*)objrun) - ((char*)(s)))) : 0))
-#define OBJ_FOR_EACH(objrun_type, objrun, header_type, header, obj_size) for(objrun = (objrun_type*)((char*)header + sizeof(header_type)); (char*)objrun + obj_size <= (char*)header + PGSIZE; objrun = (objrun_type*)((char*)objrun + obj_size))
+#define GET_FREELIST(s) (((s)->freelist_offset) ? ((struct run*)((char*)(s) + (s)->freelist_offset)) : NULL)
+#define SET_FREELIST(s, objrun) ((s)->freelist_offset = ((objrun) ? ((unsigned)(((char*)(objrun)) - ((char*)(s)))) : 0))
+#define OBJ_FOR_EACH(objrun_type, objrun, header_type, header, obj_size) for(objrun = (objrun_type*)((char*)(header) + sizeof(header_type)); (char*)(objrun) + (obj_size) <= (char*)(header) + PGSIZE; objrun = (objrun_type*)((char*)(objrun) + (obj_size)))
 #define CACHE_SLAB_INIT_FREELIST(cache, obj_size) \
     { \
         (cache)->freelist = NULL; \
-        (cache)->freelist = freelist_freerange((cache)->freelist, (void*)((char*)cache + sizeof(struct kmem_cache)), (void*)((char*)cache + PGSIZE), object_size); \
+        (cache)->freelist = freelist_freerange((cache)->freelist, (void*)((char*)(cache) + sizeof(struct kmem_cache)), (void*)((char*)(cache) + PGSIZE), object_size); \
     }
 #define SLAB_INIT_FREELIST(slb, obj_size) \
     { \
         (slb)->freelist_offset = 0; \
-        SET_FREELIST(slb, freelist_freerange(GET_FREELIST(slb), (void*)((char*)slb + sizeof(struct slab)), (void*)((char*)slb + PGSIZE), object_size)); \
+        SET_FREELIST(slb, freelist_freerange(GET_FREELIST(slb), (void*)((char*)(slb) + sizeof(struct slab)), (void*)((char*)(slb) + PGSIZE), object_size)); \
     }
 
 void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *))
@@ -279,7 +279,11 @@ static inline struct run *freelist_free(struct run *freelist, struct run *obj, u
 }
 
 struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_end, uint object_size){
-  char *obj = obj_start;
+  if(object_size == 0){
+    debug("%s", "[slab] freelist_freerange: object_size should not be zero\n");
+    return freelist;
+  }
+  char *obj = (char*)obj_start;
   if(obj + object_size > (char*)obj_end){
     debug("%s", "[slab] freelist_freerange: obj_start should be a smaller address than obj_end\n");
     return freelist;
