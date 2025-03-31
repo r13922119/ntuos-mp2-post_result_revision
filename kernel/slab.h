@@ -51,7 +51,7 @@ struct slab
  * @num_avail_slab: number of available ("partial" or "free") slabs.
  * @freelist_offset: linked list of free objects.
  * 
- * kmem_cache not only mangages all the "full/partial/free" slabs with list_head. kmem_cache itself is also a slab, we fix its slab type label to "cache" instead of "full/partial/free"
+ * kmem_cache not only manages all the "full/partial/free" slabs with list_head. kmem_cache itself is also a slab, we fix its slab type label to "cache" instead of "full/partial/free"
  * however, no need "struct list_head cache;" since kmem_cache is the only slab of the "cache" type. also, no need "num_objs_in_use" since we never free "kmem_cache the slab". but we do need a freelist of objects like the other slabs!
  */
 struct kmem_cache
