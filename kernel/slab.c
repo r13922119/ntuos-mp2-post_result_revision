@@ -26,12 +26,12 @@ struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_
 #define CACHE_SLAB_INIT_FREELIST(cache, obj_size) \
     { \
         (cache)->freelist = NULL; \
-        (cache)->freelist = freelist_freerange((cache)->freelist, (void*)((char*)(cache) + sizeof(struct kmem_cache)), (void*)((char*)(cache) + PGSIZE), object_size); \
+        (cache)->freelist = freelist_freerange((cache)->freelist, (void*)((char*)(cache) + sizeof(struct kmem_cache)), (void*)((char*)(cache) + PGSIZE), obj_size); \
     }
-#define SLAB_INIT_FREELIST(slb, obj_size) \
+    #define SLAB_INIT_FREELIST(slb, obj_size) \
     { \
         (slb)->freelist_offset = 0; \
-        SET_FREELIST(slb, freelist_freerange(GET_FREELIST(slb), (void*)((char*)(slb) + sizeof(struct slab)), (void*)((char*)(slb) + PGSIZE), object_size)); \
+        SET_FREELIST(slb, freelist_freerange(GET_FREELIST(slb), (void*)((char*)(slb) + sizeof(struct slab)), (void*)((char*)(slb) + PGSIZE), obj_size)); \
     }
 
 void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *))
@@ -77,7 +77,7 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
   struct kmem_cache *cache = (struct kmem_cache*)kalloc();
   if(!cache){
     debug("[slab] kmem_cache_create: kalloc failed for cache %s\n", name);
-    return cache;
+    return NULL;
   }
   // initialize
   safestrcpy(cache->name, name, sizeof(cache->name)); // size includes NULL, so we input "sizeof(cache->name)" but not "sizeof(cache->name)-1"
@@ -111,7 +111,7 @@ void kmem_cache_destroy(struct kmem_cache *cache)
     }
   }
   // free the page kalloc for kmem_cache itself
-  list_del_init(&cache->partial);
+  //list_del_init(&cache->partial); // this is kinda redundant since all slabs are destroyed
   kfree((void*)cache);
 }
 
@@ -234,7 +234,7 @@ static inline struct slab *slab_create(uint object_size){
   struct slab *newslab = (struct slab*)kalloc();
   if(!newslab){
     debug("%s", "[slab] slab_create: kalloc failed\n");
-    return newslab;
+    return NULL;
   }
   INIT_LIST_HEAD(&newslab->link);
   SLAB_INIT_FREELIST(newslab, object_size);
