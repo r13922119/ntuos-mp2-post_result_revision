@@ -64,13 +64,13 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
 struct kmem_cache *kmem_cache_create(char *name, uint object_size)
 {
   if(object_size < sizeof(struct run)){
-    debug("[slab] kmem_cache_create: object size %u is too small, must be at least %lu to create cache %s\n", object_size, sizeof(struct run), name);
+    //debug("[slab] kmem_cache_create: object size %u is too small, must be at least %lu to create cache %s\n", object_size, sizeof(struct run), name);
     return NULL;
   }
   // allocate a page
   struct kmem_cache *cache = (struct kmem_cache*)kalloc();
   if(!cache){
-    debug("[slab] kmem_cache_create: kalloc failed for cache %s\n", name);
+    //debug("[slab] kmem_cache_create: kalloc failed for cache %s\n", name);
     return NULL;
   }
   // initialize
@@ -83,7 +83,7 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
   cache->num_avail_slab = 0;
   SLAB_INIT_FREELIST(struct kmem_cache, cache, object_size); // make a freelist for "kmem_cache as a slab", i.e., to utilize the rest of the page since we call kalloc for only a small struct kmem_cache, we make kmem_cache a special slab. we say it is of type "cache" (which does not belong to full/partial/free)
   if(!cache->freelist_offset) {
-    debug("[slab] kmem_cache_create: freelist initialization failed for cache %s\n", name);
+    //debug("[slab] kmem_cache_create: freelist initialization failed for cache %s\n", name);
     kfree((void*)cache);
     return NULL;
   }
@@ -94,7 +94,7 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
 
 void kmem_cache_destroy(struct kmem_cache *cache)
 {
-  debug("[slab] kmem_cache_destroy: destroying kmem_cache %p\n", cache);
+  //debug("[slab] kmem_cache_destroy: destroying kmem_cache %p\n", cache);
   // free every single page kalloc for all the slabs in the slab lists kmem_cache manages
   struct list_head *head[3] = {&cache->full, &cache->partial, &cache->free}; // we don't not need this because the three list_head full, partial, free are consecutive members in struct kmem_cache, but we want to be safer
   int i;
@@ -135,7 +135,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
     oldstate = FREE;
   }else{                               // [NEW] "kmem_cache as a slab" is full and no "partial/free" slabs, i.e., all slabs are full. create a new slab.
     if(!(slab = slab_create(cache->object_size))){ // the slab is not linked to any list here.
-      debug("[slab] kmem_cache_alloc: failed to allocate a new slab for cache %s\n", cache->name);
+      //debug("[slab] kmem_cache_alloc: failed to allocate a new slab for cache %s\n", cache->name);
       release(&cache->lock); // release the lock before return
       return NULL;
     }
@@ -144,7 +144,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
   }
   // allocate one object to the slab
   if(!(obj = slab_alloc(slab))){ // theoretically never happens since "slab->freelist_offset == 0" means "full"
-    debug("[slab] kmem_cache_alloc: attempted to allocate from a 'full' partial/free/new slab ('full' because 'slab->freelist_offset == 0') in cache %s\n", cache->name);
+    //debug("[slab] kmem_cache_alloc: attempted to allocate from a 'full' partial/free/new slab ('full' because 'slab->freelist_offset == 0') in cache %s\n", cache->name);
     release(&cache->lock); // release the lock before return
     return NULL;
   }
@@ -222,35 +222,35 @@ static inline void update_slab_state_after_free(struct kmem_cache *cache, struct
 
 static inline struct slab *slab_create(uint object_size){
   if (object_size < sizeof(struct run)) {
-    debug("[slab] slab_create: object size %u is too small, must be at least %lu\n", object_size, sizeof(struct run));
+    //debug("[slab] slab_create: object size %u is too small, must be at least %lu\n", object_size, sizeof(struct run));
     return NULL;
   }
   struct slab *newslab = (struct slab*)kalloc();
   if(!newslab){
-    debug("%s", "[slab] slab_create: kalloc failed\n");
+    //debug("%s", "[slab] slab_create: kalloc failed\n");
     return NULL;
   }
   INIT_LIST_HEAD(&newslab->link);
   SLAB_INIT_FREELIST(struct slab, newslab, object_size);
   if(!newslab->freelist_offset) {
-    debug("%s", "[slab] slab_create: freelist creation failed\n");
+    //debug("%s", "[slab] slab_create: freelist creation failed\n");
     kfree((void*)newslab);
     return NULL;
   }
   newslab->num_objs_in_use = 0;
-  debug("[slab] slab_create: new slab (object size: %u bytes, at: %p) is created\n", object_size, newslab);
+  //debug("[slab] slab_create: new slab (object size: %u bytes, at: %p) is created\n", object_size, newslab);
   return newslab;
 }
 
 static inline void slab_destroy(struct slab *oldslab){
-  debug("[slab] slab_destroy: destroying slab %p\n", oldslab);
+  //debug("[slab] slab_destroy: destroying slab %p\n", oldslab);
   list_del_init(&oldslab->link);
   kfree((void*)oldslab);
 }
 
 static inline struct run *slab_alloc(struct slab *slab){
   if(!slab->freelist_offset){
-    debug("[slab] slab_alloc: attempted to allocate from a full slab ('full' because 'slab->freelist_offset == 0')\n");
+    //debug("[slab] slab_alloc: attempted to allocate from a full slab ('full' because 'slab->freelist_offset == 0')\n");
     return NULL;
   }
   struct run *obj = GET_FREELIST(slab);
@@ -274,12 +274,12 @@ static inline struct run *freelist_free(struct run *freelist, struct run *obj, u
 
 struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_end, uint object_size){
   if(object_size == 0){
-    debug("%s", "[slab] freelist_freerange: object_size should not be zero\n");
+    //debug("%s", "[slab] freelist_freerange: object_size should not be zero\n");
     return freelist;
   }
   char *obj = (char*)obj_start;
   if(obj + object_size > (char*)obj_end){
-    debug("%s", "[slab] freelist_freerange: obj_start should be a smaller address than obj_end\n");
+    //debug("%s", "[slab] freelist_freerange: obj_start should be a smaller address than obj_end\n");
     return freelist;
   }
   for(; obj + object_size <= (char*)obj_end; obj += object_size){

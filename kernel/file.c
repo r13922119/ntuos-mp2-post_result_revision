@@ -33,7 +33,7 @@ struct kmem_cache *file_cache;
 void
 fileinit(void)
 {
-  debug("[FILE] fileinit\n"); // example of using debug, you can modify this
+  //debug("[FILE] fileinit\n"); // example of using //debug, you can modify this
   file_cache = kmem_cache_create("file", sizeof(struct file)); // old approach: initlock(&ftable.lock, "ftable");
 }
 
@@ -41,15 +41,16 @@ fileinit(void)
 struct file*
 filealloc(void)
 {
-  debug("[FILE] filealloc\n"); // example of using debug, you can modify this
+  //debug("[FILE] filealloc\n"); // example of using //debug, you can modify this
   struct file *f;
 
   f = (struct file*)kmem_cache_alloc(file_cache);
+  acquire(&file_cache->lock);
   if(!f){
-    debug("[file] filealloc: failed\n");
+    //debug("[file] filealloc: failed\n");
+    release(&file_cache->lock);
     return NULL;
   }
-  acquire(&file_cache->lock);
   if(f->ref == 0){
     f->ref = 1;
     release(&file_cache->lock);
@@ -101,7 +102,7 @@ fileclose(struct file *f)
     release(&file_cache->lock);
     return;
   }
-  debug("[FILE] fileclose\n"); // example of using debug, you can modify this
+  //debug("[FILE] fileclose\n"); // example of using //debug, you can modify this
   ff = *f;
   f->ref = 0;
   f->type = FD_NONE;
@@ -114,7 +115,7 @@ fileclose(struct file *f)
     release(&ftable.lock);
     return;
   }
-  debug("[FILE] fileclose\n"); // example of using debug, you can modify this
+  //debug("[FILE] fileclose\n"); // example of using //debug, you can modify this
   ff = *f;
   f->ref = 0;
   f->type = FD_NONE;
