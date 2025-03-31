@@ -83,7 +83,7 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
   INIT_LIST_HEAD(&cache->free);
   cache->num_avail_slab = 0;
   SLAB_INIT_FREELIST(struct kmem_cache, cache, object_size); // make a freelist for "kmem_cache as a slab", i.e., to utilize the rest of the page since we call kalloc for only a small struct kmem_cache, we make kmem_cache a special slab. we say it is of type "cache" (which does not belong to full/partial/free)
-  if(!GET_FREELIST(cache)) {
+  if(!cache->freelist_offset) {
     debug("[slab] kmem_cache_create: freelist initialization failed for cache %s\n", name);
     kfree((void*)cache);
     return NULL;
@@ -116,7 +116,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
   debug("[SLAB] Alloc request on cache %s\n", cache->name);
   struct run *obj;
   // [CACHE] is the "cache" type slab, i.e., kmem_cache as a slab, not full yet?
-  if(GET_FREELIST(cache)){
+  if(cache->freelist_offset){
     // allocate one object to "kmem_cache as a slab"
     obj = GET_FREELIST(cache);
     SET_FREELIST(cache, obj->next);
@@ -250,11 +250,11 @@ static inline void slab_destroy(struct slab *oldslab){
 }
 
 static inline struct run *slab_alloc(struct slab *slab){
-  struct run *obj = GET_FREELIST(slab);
-  if(!obj){
+  if(!slab->freelist_offset){
     debug("[slab] slab_alloc: attempted to allocate from a full slab ('full' because 'slab->freelist_offset == 0')\n");
     return NULL;
   }
+  struct run *obj = GET_FREELIST(slab);
   SET_FREELIST(slab, obj->next);
   slab->num_objs_in_use++;
   return obj;
