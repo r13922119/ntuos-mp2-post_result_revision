@@ -8,8 +8,8 @@ struct run {
   struct run *next;
 };
 
-// 2 * PGSIZE_MINUS_PGSHIFT + MAGIC_PADDING = 32
-#define PGSIZE_MINUS_PGSHIFT 12
+// 2 * PGSHIFT_FOR_SLAB + MAGIC_PADDING = 32
+#define PGSHIFT_FOR_SLAB 12
 #define MAGIC_PADDING 8
 
 /**
@@ -26,9 +26,9 @@ struct slab
   union {
     struct {
       // Linked list of free objects.
-      unsigned freelist_offset : PGSIZE_MINUS_PGSHIFT;
+      unsigned freelist_offset : PGSHIFT_FOR_SLAB;
       // number of allocated objects.
-      unsigned num_objs_in_use : PGSIZE_MINUS_PGSHIFT;
+      unsigned num_objs_in_use : PGSHIFT_FOR_SLAB;
       // padded to 32
       unsigned reserved        : MAGIC_PADDING;
     };
