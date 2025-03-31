@@ -18,8 +18,7 @@ static inline struct run *slab_alloc(struct slab *slab);
 static inline void slab_free(struct slab *slab, struct run *obj, uint object_size);
 static inline struct run *freelist_free(struct run *freelist, struct run *obj, uint object_size);
 struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_end, uint object_size);
-#define MAX_OBJS ((PGSIZE - sizeof(struct slab)) / cache->object_size) // computed for debug purpose only
-#define IN_CACHE_OBJ ((PGSIZE - sizeof(struct kmem_cache)) / cache->object_size) // computed for debug purpose only
+#define MAX_OBJS(type) ((PGSIZE - sizeof(type)) / cache->object_size) // computed for debug purpose only
 #define GET_FREELIST(s) (((s)->freelist_offset) ? ((struct run*)((char*)(s) + (s)->freelist_offset)) : NULL)
 #define SET_FREELIST(s, objrun) ((s)->freelist_offset = ((objrun) ? ((unsigned)(((char*)(objrun)) - ((char*)(s)))) : 0))
 #define OBJ_FOR_EACH(objrun_type, objrun, header_type, header, obj_size) for(objrun = (objrun_type*)((char*)(header) + sizeof(header_type)); (char*)(objrun) + (obj_size) <= (char*)(header) + PGSIZE; objrun = (objrun_type*)((char*)(objrun) + (obj_size)))
@@ -32,7 +31,7 @@ struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_
 void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *))
 {
   acquire(&cache->lock);
-  debug("[SLAB] kmem_cache { name: %s, object_size: %u, at: %p, in_cache_obj: %lu }\n", cache->name, cache->object_size, cache, IN_CACHE_OBJ);
+  debug("[SLAB] kmem_cache { name: %s, object_size: %u, at: %p, in_cache_obj: %lu }\n", cache->name, cache->object_size, cache, MAX_OBJS(struct kmem_cache));
   // print the info of the type "cache" slab, i.e., kmem_cache as a slab.
   debug("[SLAB] \t[ cache slabs ]\n[SLAB] \t\t[ slab %p ] { freelist: %p, nxt: %p }\n", cache, GET_FREELIST(cache), NULL); // nxt does not mean anything here
   struct run *obj;
@@ -89,13 +88,13 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
     return NULL;
   }
   // print info
-  debug("[SLAB] New kmem_cache (name: %s, object size: %u bytes, at: %p, max objects per slab: %lu, support in cache obj: %lu) is created\n", name, object_size, cache, MAX_OBJS, IN_CACHE_OBJ);
+  debug("[SLAB] New kmem_cache (name: %s, object size: %u bytes, at: %p, max objects per slab: %lu, support in cache obj: %lu) is created\n", name, object_size, cache, MAX_OBJS(struct slab), MAX_OBJS(struct kmem_cache));
   return cache;
 }
 
 void kmem_cache_destroy(struct kmem_cache *cache)
 {
-  debug("[slab] kmem_cache_destroy: destryoing kmem_cache %p\n", cache);
+  debug("[slab] kmem_cache_destroy: destroying kmem_cache %p\n", cache);
   // free every single page kalloc for all the slabs in the slab lists kmem_cache manages
   struct list_head *head[3] = {&cache->full, &cache->partial, &cache->free}; // we don't not need this because the three list_head full, partial, free are consecutive members in struct kmem_cache, but we want to be safer
   int i;
