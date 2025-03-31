@@ -23,15 +23,10 @@ struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_
 #define GET_FREELIST(s) (((s)->freelist_offset) ? ((struct run*)((char*)(s) + (s)->freelist_offset)) : NULL)
 #define SET_FREELIST(s, objrun) ((s)->freelist_offset = ((objrun) ? ((unsigned)(((char*)(objrun)) - ((char*)(s)))) : 0))
 #define OBJ_FOR_EACH(objrun_type, objrun, header_type, header, obj_size) for(objrun = (objrun_type*)((char*)(header) + sizeof(header_type)); (char*)(objrun) + (obj_size) <= (char*)(header) + PGSIZE; objrun = (objrun_type*)((char*)(objrun) + (obj_size)))
-#define CACHE_SLAB_INIT_FREELIST(cache, obj_size) \
+#define SLAB_INIT_FREELIST(type, slab, obj_size) \
     { \
-        (cache)->freelist = NULL; \
-        (cache)->freelist = freelist_freerange((cache)->freelist, (void*)((char*)(cache) + sizeof(struct kmem_cache)), (void*)((char*)(cache) + PGSIZE), obj_size); \
-    }
-    #define SLAB_INIT_FREELIST(slb, obj_size) \
-    { \
-        (slb)->freelist_offset = 0; \
-        SET_FREELIST(slb, freelist_freerange(GET_FREELIST(slb), (void*)((char*)(slb) + sizeof(struct slab)), (void*)((char*)(slb) + PGSIZE), obj_size)); \
+        (slab)->freelist_offset = 0; \
+        SET_FREELIST(slab, freelist_freerange(GET_FREELIST(slab), (void*)((char*)(slab) + sizeof(type)), (void*)((char*)(slab) + PGSIZE), obj_size)); \
     }
 
 void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *))
@@ -39,7 +34,7 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
   acquire(&cache->lock);
   debug("[SLAB] kmem_cache { name: %s, object_size: %u, at: %p, in_cache_obj: %lu }\n", cache->name, cache->object_size, cache, IN_CACHE_OBJ);
   // print the info of the type "cache" slab, i.e., kmem_cache as a slab.
-  debug("[SLAB] \t[ cache slabs ]\n[SLAB] \t\t[ slab %p ] { freelist: %p, nxt: %p }\n", cache, cache->freelist, NULL); // nxt does not mean anything here
+  debug("[SLAB] \t[ cache slabs ]\n[SLAB] \t\t[ slab %p ] { freelist: %p, nxt: %p }\n", cache, GET_FREELIST(cache), NULL); // nxt does not mean anything here
   struct run *obj;
   uint idx = 0;
   OBJ_FOR_EACH(struct run, obj, struct kmem_cache, cache, cache->object_size){
@@ -87,8 +82,8 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
   INIT_LIST_HEAD(&cache->partial);
   INIT_LIST_HEAD(&cache->free);
   cache->num_avail_slab = 0;
-  CACHE_SLAB_INIT_FREELIST(cache, object_size); // make a freelist for "kmem_cache as a slab", i.e., to utilize the rest of the page since we call kalloc for only a small struct kmem_cache, we make kmem_cache a special slab. we say it is of type "cache" (which does not belong to full/partial/free)
-  if(!cache->freelist) {
+  SLAB_INIT_FREELIST(struct kmem_cache, cache, object_size); // make a freelist for "kmem_cache as a slab", i.e., to utilize the rest of the page since we call kalloc for only a small struct kmem_cache, we make kmem_cache a special slab. we say it is of type "cache" (which does not belong to full/partial/free)
+  if(!GET_FREELIST(cache)) {
     debug("[slab] kmem_cache_create: freelist initialization failed for cache %s\n", name);
     kfree((void*)cache);
     return NULL;
@@ -121,10 +116,10 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
   debug("[SLAB] Alloc request on cache %s\n", cache->name);
   struct run *obj;
   // [CACHE] is the "cache" type slab, i.e., kmem_cache as a slab, not full yet?
-  if(cache->freelist){
+  if(GET_FREELIST(cache)){
     // allocate one object to "kmem_cache as a slab"
-    obj = cache->freelist;
-    cache->freelist = obj->next;
+    obj = GET_FREELIST(cache);
+    SET_FREELIST(cache, obj->next);
     debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, cache, cache->name);
     // "kmem_cache as a slab" is always in "cache" type, i.e., no state changes within "full/partial/free"
     release(&cache->lock); // release the lock before return
@@ -167,7 +162,7 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
   // [CACHE] obj is in the slab of "cache" type, i.e., kmem_cache as a slab.
   if(slab_type == (uint64)cache){
     // free the object
-    cache->freelist = freelist_free(cache->freelist, obj, cache->object_size);
+    SET_FREELIST(cache, freelist_free(GET_FREELIST(cache), obj, cache->object_size));
     debug("[SLAB] Free %p in slab %p (%s)\n[SLAB] End of free\n", obj, cache, cache->name);
     release(&cache->lock); // release the lock before return
     return;
@@ -237,7 +232,7 @@ static inline struct slab *slab_create(uint object_size){
     return NULL;
   }
   INIT_LIST_HEAD(&newslab->link);
-  SLAB_INIT_FREELIST(newslab, object_size);
+  SLAB_INIT_FREELIST(struct slab, newslab, object_size);
   if(!newslab->freelist_offset) {
     debug("%s", "[slab] slab_create: freelist creation failed\n");
     kfree((void*)newslab);

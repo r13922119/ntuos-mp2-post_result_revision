@@ -8,9 +8,11 @@ struct run {
   struct run *next;
 };
 
-// 2 * PGSHIFT_FOR_SLAB + MAGIC_PADDING = 32
+// 2 * PGSHIFT_FOR_SLAB + MAGIC_SLAB_PADDING  = 32
+// 1 * PGSHIFT_FOR_SLAB + MAGIC_CACHE_PADDING = 16
 #define PGSHIFT_FOR_SLAB 12
-#define MAGIC_PADDING 8
+#define MAGIC_SLAB_PADDING 8
+#define MAGIC_CACHE_PADDING 4
 
 /**
  * struct slab - Represents a slab in the slab allocator.
@@ -30,7 +32,7 @@ struct slab
       // number of allocated objects.
       unsigned num_objs_in_use : PGSHIFT_FOR_SLAB;
       // padded to 32
-      unsigned reserved        : MAGIC_PADDING;
+      unsigned reserved        : MAGIC_SLAB_PADDING;
     };
     uint32 meta;
   };
@@ -47,7 +49,7 @@ struct slab
  * @partial: Partially allocated slabs.
  * @free: Free slabs.
  * @num_avail_slab: number of available ("partial" or "free") slabs.
- * @freelist: linked list of free objects.
+ * @freelist_offset: linked list of free objects.
  * 
  * kmem_cache not only mangages all the "full/partial/free" slabs with list_head. kmem_cache itself is also a slab, we fix its slab type label to "cache" instead of "full/partial/free"
  * however, no need "struct list_head cache;" since kmem_cache is the only slab of the "cache" type. also, no need "num_objs_in_use" since we never free "kmem_cache the slab". but we do need a freelist of objects like the other slabs!
@@ -64,7 +66,15 @@ struct kmem_cache
   struct list_head free;     // Free slabs (Optional)
 
   uint32 num_avail_slab;
-  struct run *freelist;
+  union {
+    struct {
+      // Linked list of free objects.
+      unsigned freelist_offset : PGSHIFT_FOR_SLAB;
+      // padded to 16
+      unsigned reserved        : MAGIC_CACHE_PADDING;
+    };
+    uint16 cache_slab_meta;
+  };
 };
 
 /**
