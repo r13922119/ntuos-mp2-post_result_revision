@@ -33,11 +33,11 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
   acquire(&cache->lock);
   debug("[SLAB] kmem_cache { name: %s, object_size: %u, at: %p, in_cache_obj: %lu }\n", cache->name, cache->object_size, cache, MAX_OBJS(struct kmem_cache));
   // print the info of the type "cache" slab, i.e., kmem_cache as a slab.
-  debug("[SLAB] \t[ cache slabs ]\n[SLAB] \t\t[ slab %p ] { freelist: %p, nxt: %p }\n", cache, GET_FREELIST(cache), NULL); // nxt does not mean anything here
+  debug("[SLAB]    [ cache slabs ]\n[SLAB]        [ slab %p ] { freelist: %p, nxt: %p }\n", cache, GET_FREELIST(cache), NULL); // nxt does not mean anything here
   struct run *obj;
   uint idx = 0;
   OBJ_FOR_EACH(struct run, obj, struct kmem_cache, cache, cache->object_size){
-    debug("[SLAB] \t\t\t[ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, obj->next);
+    debug("[SLAB]           [ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, obj->next);
     slab_obj_printer((void*)obj);
     debug("%s", "} }\n");
     idx++;
@@ -46,11 +46,11 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
   struct list_head *node;
   list_for_each(node, &cache->partial){
     struct slab *entry = list_entry(node, struct slab, link);
-    debug("[SLAB] \t[ partial slabs ]\n[SLAB] \t\t[ slab %p ] { freelist: %p, nxt: %p }\n", entry, GET_FREELIST(entry), entry->link.next);
+    debug("[SLAB]    [ partial slabs ]\n[SLAB]        [ slab %p ] { freelist: %p, nxt: %p }\n", entry, GET_FREELIST(entry), entry->link.next);
     struct run *obj;
     int idx = 0;
     OBJ_FOR_EACH(struct run, obj, struct slab, entry, cache->object_size){
-      debug("[SLAB] \t\t\t[ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, ((struct run*)obj)->next);
+      debug("[SLAB]           [ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, ((struct run*)obj)->next);
       slab_obj_printer((void*)obj);
       debug("%s", "} }\n");
       idx++;
