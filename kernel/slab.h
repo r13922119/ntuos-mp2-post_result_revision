@@ -16,16 +16,18 @@ struct run {
  * struct slab - Represents a slab in the slab allocator.
  * @link: with link.next and link.prev pointing to "link" of the other slabs in the list; also, it is an empty list only when newly created
  * @num_objs_in_use: number of allocated objects.
- * @freelist_start: Linked list start of free objects.
- * @freelist_end: Linked list end of free objects.
+ * @freelist_front: Linked list start of free objects.
+ * @freelist_rear: Linked list end of free objects.
  * @lazy_list_enabled: to indicate whether [slab + freelist_offset, slab + PGSIZE] is a free range without a real list of pointers
  * 
- * when freelist_start == 0, the slab is full; otherwise, it is partial or free
+ * when freelist_front == 0, the slab is full; otherwise, it is partial or free
  * when num_objs_in_use == 0, the slab is free; otherwise, it is partial or full
- * lazy_list_enabled is set to true when there are free objects never been allocated from slab_create() till now. they form a range.
- * the freelist should be {slab+freelist_start, slab+freelist_start+obj_size, ..., slab+freelist_start+((PGSIZE-sizeof(type))/object_size-1)*object_size, A, B, ...},
- * where the addr of object A is stored at the object at 'slab+freelist_start+((PGSIZE-sizeof(type))/object_size-1) * object_size', then that of B is stored at A, and so on.
- * in other words the freelist consists of a contiguous first part (till the end of the page) and a struct run* second part
+ * 
+ * the freelist is a queue, adopting a First-In-First-Out approach.
+ * lazy_list_enabled is set to true when there are free objects in the slab never been allocated. they should form a range.
+ * the freelist should be {slab+freelist_front, slab+freelist_front+obj_size, ..., slab+freelist_front+(MAX_OBJS-1)*object_size, A, B, ...},
+ * where the addr of object A is stored at the object at 'slab+freelist_front+(MAX_OBJS-1) * object_size'; that of B is stored at A, and so on.
+ * i.e., the freelist consists of a contiguous first part (till the end of the page) and a struct run* second part
  * it is designed to avoid traversing all the free objects when initializing the freelist
  */
 struct slab
@@ -37,10 +39,10 @@ struct slab
   union {
     struct {
       // Linked list start of free objects.
-      unsigned freelist_start   : PGSHIFT_FOR_SLAB;
+      unsigned freelist_front   : PGSHIFT_FOR_SLAB;
       // Linked list end of free objects.
-      unsigned freelist_end     : PGSHIFT_FOR_SLAB;
-      // to indicate whether [slab + freelist_start, slab + PGSIZE] is a free range without a real list of pointers
+      unsigned freelist_rear    : PGSHIFT_FOR_SLAB;
+      // to indicate whether [slab + freelist_front, slab + PGSIZE] is a free range without a real list of pointers
       unsigned lazy_list_enabled: 1;
       // padded to 32
       unsigned reserved         : MAGIC_SLAB_PADDING;
@@ -58,8 +60,8 @@ struct slab
  * @partial: Partially allocated slabs.
  * @free: Free slabs.
  * @num_avail_slab: number of available ("partial" or "free") slabs.
- * @freelist_start: Linked list start of free objects.
- * @freelist_end: Linked list end of free objects.
+ * @freelist_front: Linked list front of free objects.
+ * @freelist_rear: Linked list rear of free objects.
  * @lazy_list_enabled: to indicate whether [slab + freelist_offset, slab + PGSIZE] is a free range without a real list of pointers. see struct slab for more info.
  * 
  * kmem_cache not only manages all the "full/partial/free" slabs with list_head. kmem_cache itself is also a slab, we fix its slab type label to "cache" instead of "full/partial/free"
@@ -79,11 +81,11 @@ struct kmem_cache
   uint32 num_avail_slab;
   union {
     struct {
-      // Linked list start of free objects.
-      unsigned freelist_start   : PGSHIFT_FOR_SLAB;
-      // Linked list end of free objects.
-      unsigned freelist_end     : PGSHIFT_FOR_SLAB;
-      // to indicate whether [kmem_cache + freelist_start, kmem_cache + PGSIZE] is a free range
+      // Linked list front of free objects.
+      unsigned freelist_front   : PGSHIFT_FOR_SLAB;
+      // Linked list rear of free objects.
+      unsigned freelist_rear    : PGSHIFT_FOR_SLAB;
+      // to indicate whether [kmem_cache + freelist_front, kmem_cache + PGSIZE] is a free range
       unsigned lazy_list_enabled: 1;
       // padded to 32
       unsigned reserved         : MAGIC_SLAB_PADDING;

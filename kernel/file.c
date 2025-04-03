@@ -33,30 +33,37 @@ struct kmem_cache *file_cache;
 void
 fileinit(void)
 {
-  //debug("[FILE] fileinit\n"); // example of using //debug, you can modify this
-  file_cache = kmem_cache_create("file", sizeof(struct file)); // old approach: initlock(&ftable.lock, "ftable");
+  debug("[FILE] fileinit\n"); // example of using debug, you can modify this
+  // new approach
+  file_cache = kmem_cache_create("file", sizeof(struct file));
+  // old approach: initlock(&ftable.lock, "ftable");
 }
 
 // Allocate a file structure.
 struct file*
 filealloc(void)
 {
-  //debug("[FILE] filealloc\n"); // example of using //debug, you can modify this
+  debug("[FILE] filealloc\n"); // example of using debug, you can modify this
   struct file *f;
 
+  // new approach
   f = (struct file*)kmem_cache_alloc(file_cache);
   acquire(&file_cache->lock);
   if(!f){
-    //debug("[file] filealloc: failed\n");
+    debug("[file] filealloc: failed\n");
     release(&file_cache->lock);
     return NULL;
   }
+  memset((void*)f, 0, sizeof(struct file));
   if(f->ref == 0){
     f->ref = 1;
     release(&file_cache->lock);
     //print_kmem_cache(file_cache, fileprint_metadata);
     return f;
   }
+  debug("[file] filealloc: the object %p still referenced or uninitialized to 0 when newly allocated\n", f);
+  release(&file_cache->lock);
+  return 0;
   /* old approach
   acquire(&ftable.lock);
   for(f = ftable.file; f < ftable.file + NFILE; f++){
@@ -67,27 +74,29 @@ filealloc(void)
     }
   }
   release(&ftable.lock);
-  */
   return 0;
+  */
 }
 
 // Increment ref count for file f.
 struct file*
 filedup(struct file *f)
 {
+  // new approach
   acquire(&file_cache->lock);
   if(f->ref < 1)
     panic("filedup");
   f->ref++;
   release(&file_cache->lock);
+  return f;
   /* old approach
   acquire(&ftable.lock);
   if(f->ref < 1)
     panic("filedup");
   f->ref++;
   release(&ftable.lock);
-  */
   return f;
+  */
 }
 
 // Close file f.  (Decrement ref count, close when reaches 0.)
@@ -96,6 +105,7 @@ fileclose(struct file *f)
 {
   struct file ff;
 
+  // new approach
   acquire(&file_cache->lock);
   if(f->ref < 1)
     panic("fileclose");
@@ -103,11 +113,12 @@ fileclose(struct file *f)
     release(&file_cache->lock);
     return;
   }
-  //debug("[FILE] fileclose\n"); // example of using //debug, you can modify this
+  debug("[FILE] fileclose\n"); // example of using debug, you can modify this
   ff = *f;
-  f->ref = 0;
-  f->type = FD_NONE;
+  memset((void*)f, 1, sizeof(struct file));
   release(&file_cache->lock);
+  kmem_cache_free(file_cache,f);
+  //print_kmem_cache(file_cache, fileprint_metadata);
   /* old approach
   acquire(&ftable.lock);
   if(f->ref < 1)
@@ -116,7 +127,7 @@ fileclose(struct file *f)
     release(&ftable.lock);
     return;
   }
-  //debug("[FILE] fileclose\n"); // example of using //debug, you can modify this
+  debug("[FILE] fileclose\n"); // example of using debug, you can modify this
   ff = *f;
   f->ref = 0;
   f->type = FD_NONE;
@@ -131,8 +142,6 @@ fileclose(struct file *f)
     end_op();
   }
 
-  kmem_cache_free(file_cache,f);
-  //print_kmem_cache(file_cache, fileprint_metadata);
 }
 
 // Get metadata about file f.
