@@ -45,6 +45,26 @@ static void check_kmem_cache(struct kmem_cache *cache);
         for(objrun = (objrun_type*)(OBJ_START(header_type, header)); \
             OBJ_CONTIG_NEXT(objrun, object_size) <= OBJ_END(header); \
             objrun = (objrun_type*)(OBJ_CONTIG_NEXT(objrun, object_size)))
+// allocate and free and update the freelist
+#define ALLOC_AND_UPDATE_LIST(obj, header_type, header, object_size) \
+    { \
+        struct run *front = (struct run*)GET_FREELIST_FRONT(header); \
+        struct run *rear = (struct run*)GET_FREELIST_REAR(header); \
+        uint8 lazy_list_enabled = (header)->lazy_list_enabled; \
+        struct run *lazy_last = (struct run*)OBJ_LAST(header_type, header, object_size); \
+        obj = freelist_alloc(&front, &rear, object_size, &lazy_list_enabled, lazy_last); \
+        SET_FREELIST_FRONT(header, front); \
+        SET_FREELIST_REAR(header, rear); \
+        (header)->lazy_list_enabled = lazy_list_enabled; \
+    }
+#define FREE_AND_UPDATE_LIST(obj, header_type, header, object_size) \
+    { \
+        struct run *front = (struct run*)GET_FREELIST_FRONT(header); \
+        struct run *rear = (struct run*)GET_FREELIST_REAR(header); \
+        freelist_free(&front, &rear, object_size, obj); \
+        SET_FREELIST_FRONT(header, front); \
+        SET_FREELIST_REAR(header, rear); \
+    }
 
 void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *))
 {
@@ -55,9 +75,8 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
   struct run *obj;
   uint idx = 0;
   OBJ_FOR_EACH(struct run, obj, struct kmem_cache, cache, cache->object_size){
-    if(cache->lazy_list_enabled && obj >= GET_FREELIST_FRONT(cache) && obj < (struct run*)OBJ_LAST(struct kmem_cache, cache, cache->object_size)){
+    if(cache->lazy_list_enabled && obj >= GET_FREELIST_FRONT(cache) && obj < (struct run*)OBJ_LAST(struct kmem_cache, cache, cache->object_size))
       obj->next = (struct run*)OBJ_CONTIG_NEXT(obj, cache->object_size);
-    }
     debug("[SLAB]           [ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, obj->next);
     slab_obj_printer((void*)obj);
     debug("} }\n");
@@ -71,9 +90,8 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
     debug("[SLAB]    [ partial slabs ]\n[SLAB]        [ slab %p ] { freelist: %p, nxt: %p }\n", entry, GET_FREELIST_FRONT(entry), entry->link.next);
     idx = 0;
     OBJ_FOR_EACH(struct run, obj, struct slab, entry, cache->object_size){
-      if(entry->lazy_list_enabled && obj >= GET_FREELIST_FRONT(entry) && obj < (struct run*)OBJ_LAST(struct slab, entry, cache->object_size)){
+      if(entry->lazy_list_enabled && obj >= GET_FREELIST_FRONT(entry) && obj < (struct run*)OBJ_LAST(struct slab, entry, cache->object_size))
         obj->next = (struct run*)OBJ_CONTIG_NEXT(obj, cache->object_size);
-      }
       debug("[SLAB]           [ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, ((struct run*)obj)->next);
       slab_obj_printer((void*)obj);
       debug("} }\n");
@@ -148,15 +166,8 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
   // [CACHE] is the "cache" type slab, i.e., kmem_cache as a slab, not full yet?
   if(cache->freelist_front){
     // allocate one object to "kmem_cache as a slab"
-    struct run *front = (struct run*)GET_FREELIST_FRONT(cache);
-    struct run *rear = (struct run*)GET_FREELIST_REAR(cache);
-    uint8 lazy_list_enabled = cache->lazy_list_enabled;
-    struct run *lazy_last = (struct run*)OBJ_LAST(struct kmem_cache, cache, cache->object_size);
-    obj = freelist_alloc(&front, &rear, cache->object_size, &lazy_list_enabled, lazy_last);
-    SET_FREELIST_FRONT(cache, front);
-    SET_FREELIST_REAR(cache, rear);
-    cache->lazy_list_enabled = lazy_list_enabled;
-    memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc, but we do it again for safety
+    ALLOC_AND_UPDATE_LIST(obj, struct kmem_cache, cache, cache->object_size);
+    memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc in ALLOCATE, but we do it again for safety
     debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, cache, cache->name);
     // "kmem_cache as a slab" is always in "cache" type, i.e., no state changes within "full/partial/free"
     #ifdef MY_DEBUG
@@ -189,7 +200,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
     release(&cache->lock); // release the lock before return
     return NULL;
   }
-  memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc and slab_alloc, but we do it again for safety
+  memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc in ALLOCATE and slab_alloc, but we do it again for safety
   debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, slab, cache->name);
   update_slab_state_after_alloc(cache, slab, oldstate); // update the slab state
   #ifdef MY_DEBUG
@@ -207,11 +218,7 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
   if(slab_type == (uint64)cache){
     // free the object
     memset((void*)obj, 1, cache->object_size);  // it will be done by freelist_free, but we do it again for safety
-    struct run *front = (struct run*)GET_FREELIST_FRONT(cache);
-    struct run *rear = (struct run*)GET_FREELIST_REAR(cache);
-    freelist_free(&front, &rear, cache->object_size, obj);
-    SET_FREELIST_FRONT(cache, front);
-    SET_FREELIST_REAR(cache, rear);
+    FREE_AND_UPDATE_LIST(obj, struct kmem_cache, cache, cache->object_size);
     debug("[SLAB] Free %p in slab %p (%s)\n[SLAB] End of free\n", obj, cache, cache->name);
     #ifdef MY_DEBUG
     check_kmem_cache(cache);
@@ -313,26 +320,16 @@ static inline struct run *slab_alloc(struct slab *slab, uint object_size){
     debug("[slab] slab_alloc: attempted to allocate from a full slab ('full' because 'slab->freelist_front == 0')\n");
     return NULL;
   }
-  struct run *front = (struct run*)GET_FREELIST_FRONT(slab);
-  struct run *rear = (struct run*)GET_FREELIST_REAR(slab);
-  uint8 lazy_list_enabled = slab->lazy_list_enabled;
-  struct run *lazy_last = (struct run*)OBJ_LAST(struct slab, slab, object_size);
-  struct run *obj = freelist_alloc(&front, &rear, object_size, &lazy_list_enabled, lazy_last);
-  SET_FREELIST_FRONT(slab, front);
-  SET_FREELIST_REAR(slab, rear);
-  slab->lazy_list_enabled = lazy_list_enabled;
+  struct run *obj;
+  ALLOC_AND_UPDATE_LIST(obj, struct slab, slab, object_size);
   slab->num_objs_in_use++;
-  memset((void*)obj, 0, object_size);  // it has been done by freelist_alloc, but we do it again for safety
+  memset((void*)obj, 0, object_size);  // it has been done by freelist_alloc in ALLOCATE, but we do it again for safety
   return obj;
 }
 
 static inline void slab_free(struct slab *slab, struct run *obj, uint object_size){
   memset((void*)obj, 1, object_size);  // it will be done by freelist_free, but we do it again for safety
-  struct run *front = (struct run*)GET_FREELIST_FRONT(slab);
-  struct run *rear = (struct run*)GET_FREELIST_REAR(slab);
-  freelist_free(&front, &rear, object_size, obj);
-  SET_FREELIST_FRONT(slab, front);
-  SET_FREELIST_REAR(slab, rear);
+  FREE_AND_UPDATE_LIST(obj, struct slab, slab, object_size);
   slab->num_objs_in_use--;
 }
 
