@@ -24,27 +24,27 @@ void print_kmem_cache_lazy(struct kmem_cache *cache, void (*slab_obj_printer)(vo
 static void check_kmem_cache(struct kmem_cache *cache);
 #endif // MY_DEBUG
 
-#define MAX_SPACE(type)             (PGSIZE - sizeof(type))
-#define MAX_OBJS(type, object_size) (MAX_SPACE(type) / object_size)
+#define MAX_SPACE(type)                            (PGSIZE - sizeof(type))
+#define MAX_OBJS(type, object_size)                (MAX_SPACE(type) / object_size)
 // object address computation (type: char*)
 #define OBJ_LAST_OFFSET(header_type, object_size)  (sizeof(header_type) + (MAX_OBJS(header_type, object_size) - 1) * object_size)
 #define OBJ_START(header_type, header)             ((char*)(header) + sizeof(header_type))
 #define OBJ_LAST(header_type, header, object_size) ((char*)(header) + OBJ_LAST_OFFSET(header_type, object_size))
 #define OBJ_END(header)                            ((char*)(header) + PGSIZE)
-#define OBJ_NEXT(object_addr, object_size)         ((char*)(object_addr) + (object_size))
+#define OBJ_CONTIG_NEXT(object_addr, object_size)  ((char*)(object_addr) + (object_size))
 // page offset & address translation
-#define GET_ADDR(base_addr, offset)               ((char*)(base_addr) + (offset))
-#define GET_OFFSET(base_addr, addr)               ((uint64)(addr) - (uint64)(base_addr))  //??????
+#define GET_ADDR(base_addr, offset)                ((char*)(base_addr) + (offset))
+#define GET_OFFSET(base_addr, addr)                ((long long)((char*)addr - (char*)base_addr))
 // accessing free list addresses (type: struct run)
-#define GET_FREELIST_FRONT(s)         (((s)->freelist_front) ? ((struct run*)GET_ADDR(s, (s)->freelist_front)) : NULL)
-#define SET_FREELIST_FRONT(s, objrun) ((s)->freelist_front = (((char*)(objrun) > (char*)(s)) ? GET_OFFSET(s, objrun) : 0))
+#define GET_FREELIST_FRONT(s)          (((s)->freelist_front) ? ((struct run*)GET_ADDR(s, (s)->freelist_front)) : NULL)
+#define SET_FREELIST_FRONT(s, objrun)  ((s)->freelist_front = (((char*)(objrun) > (char*)(s)) ? (uint64)GET_OFFSET(s, objrun) : 0))
 #define GET_FREELIST_REAR(s)           (((s)->freelist_rear) ? ((struct run*)GET_ADDR(s, (s)->freelist_rear)) : NULL)
-#define SET_FREELIST_REAR(s, objrun)   ((s)->freelist_rear = (((char*)(objrun) > (char*)(s)) ? GET_OFFSET(s, objrun) : 0))
+#define SET_FREELIST_REAR(s, objrun)   ((s)->freelist_rear = (((char*)(objrun) > (char*)(s)) ? (uint64)GET_OFFSET(s, objrun) : 0))
 // contiguous object traversal
 #define OBJ_FOR_EACH(objrun_type, objrun, header_type, header, object_size) \
         for(objrun = (objrun_type*)(OBJ_START(header_type, header)); \
-            OBJ_NEXT(objrun, object_size) <= OBJ_END(header); \
-            objrun = (objrun_type*)(OBJ_NEXT(objrun, object_size)))
+            OBJ_CONTIG_NEXT(objrun, object_size) <= OBJ_END(header); \
+            objrun = (objrun_type*)(OBJ_CONTIG_NEXT(objrun, object_size)))
 
 void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *))
 {
@@ -56,7 +56,7 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
   uint idx = 0;
   OBJ_FOR_EACH(struct run, obj, struct kmem_cache, cache, cache->object_size){
     if(cache->lazy_list_enabled && obj >= GET_FREELIST_FRONT(cache) && obj < (struct run*)OBJ_LAST(struct kmem_cache, cache, cache->object_size)){
-      obj->next = (struct run*)OBJ_NEXT(obj, cache->object_size);
+      obj->next = (struct run*)OBJ_CONTIG_NEXT(obj, cache->object_size);
     }
     debug("[SLAB]           [ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, obj->next);
     slab_obj_printer((void*)obj);
@@ -72,7 +72,7 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
     idx = 0;
     OBJ_FOR_EACH(struct run, obj, struct slab, entry, cache->object_size){
       if(entry->lazy_list_enabled && obj >= GET_FREELIST_FRONT(entry) && obj < (struct run*)OBJ_LAST(struct slab, entry, cache->object_size)){
-        obj->next = (struct run*)OBJ_NEXT(obj, cache->object_size);
+        obj->next = (struct run*)OBJ_CONTIG_NEXT(obj, cache->object_size);
       }
       debug("[SLAB]           [ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, ((struct run*)obj)->next);
       slab_obj_printer((void*)obj);
@@ -339,7 +339,7 @@ static inline struct run *freelist_alloc(struct run **front_p, struct run **rear
   }
   struct run *obj = *front_p;   // [WAS NONEMPTY...]  allocate from the front object
   if(*lazy_list_enabled){       // [... & LAZY] update front to + object_size
-    *front_p = (struct run*)OBJ_NEXT(*front_p, object_size);
+    *front_p = (struct run*)OBJ_CONTIG_NEXT(*front_p, object_size);
     if(*front_p >= lazy_last){  // update list state since we cannot store an object at *front_p + object_size
       *lazy_list_enabled = 0;
     }
