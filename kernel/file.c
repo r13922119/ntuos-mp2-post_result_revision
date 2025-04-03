@@ -54,6 +54,7 @@ filealloc(void)
   if(f->ref == 0){
     f->ref = 1;
     release(&file_cache->lock);
+    //print_kmem_cache(file_cache, fileprint_metadata);
     return f;
   }
   /* old approach
@@ -131,6 +132,7 @@ fileclose(struct file *f)
   }
 
   kmem_cache_free(file_cache,f);
+  //print_kmem_cache(file_cache, fileprint_metadata);
 }
 
 // Get metadata about file f.
