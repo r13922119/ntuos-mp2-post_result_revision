@@ -16,8 +16,8 @@ struct run {
  * struct slab - Represents a slab in the slab allocator.
  * @link: with link.next and link.prev pointing to "link" of the other slabs in the list; also, it is an empty list only when newly created
  * @num_objs_in_use: number of allocated objects.
- * @freelist_front: Linked list start of free objects.
- * @freelist_rear: Linked list end of free objects.
+ * @freelist_front: Linked list front of free objects.
+ * @freelist_rear: Linked list rear of free objects.
  * @lazy_list_enabled: to indicate whether [slab + freelist_offset, slab + PGSIZE] is a free range without a real list of pointers
  * 
  * when freelist_front == 0, the slab is full; otherwise, it is partial or free

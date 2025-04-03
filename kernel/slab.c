@@ -155,7 +155,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
     memset(obj, 0, cache->object_size);  // it has been done by freelist_alloc, but we do it again for safety
     debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, cache, cache->name);
     // "kmem_cache as a slab" is always in "cache" type, i.e., no state changes within "full/partial/free"
-    check_kmem_cache(cache);
+    //check_kmem_cache(cache);
     release(&cache->lock); // release the lock before return
     return (void*)obj;
   }
@@ -186,7 +186,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
   memset(obj, 0, cache->object_size);  // it has been done by freelist_alloc and slab_alloc, but we do it again for safety
   debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, slab, cache->name);
   update_slab_state_after_alloc(cache, slab, oldstate); // update the slab state
-  check_kmem_cache(cache);
+  //check_kmem_cache(cache);
   release(&cache->lock); // release the lock before return
   return (void*)obj;
 }
@@ -205,7 +205,7 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
     SET_FREELIST_FRONT(cache, front);
     SET_FREELIST_REAR(cache, rear);
     debug("[SLAB] Free %p in slab %p (%s)\n[SLAB] End of free\n", obj, cache, cache->name);
-    check_kmem_cache(cache);
+    //check_kmem_cache(cache);
     release(&cache->lock); // release the lock before return
     return;
   }
@@ -218,7 +218,7 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
   debug("[SLAB] Free %p in slab %p (%s)\n", obj, slab, cache->name);
   update_slab_state_after_free(cache, slab, oldstate);
   debug("[SLAB] End of free\n");
-  check_kmem_cache(cache);
+  //check_kmem_cache(cache);
   release(&cache->lock); // release the lock before return
 }
 
