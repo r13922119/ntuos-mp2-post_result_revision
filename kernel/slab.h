@@ -130,3 +130,10 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj);
  * @print_fn: Function to print each object in the cache. If NULL (0) is given, will skip object printing part.
  */
 void print_kmem_cache(struct kmem_cache *cache, void (*print_fn)(void *));
+
+/**
+ * print_kmem_cache_lazy - Print the details of a kmem_cache while remaining list laziness.
+ * @cache: The cache to print.
+ * @print_fn: Function to print each object in the cache. If NULL (0) is given, will skip object printing part.
+ */
+void print_kmem_cache_lazy(struct kmem_cache *cache, void (*print_fn)(void *));

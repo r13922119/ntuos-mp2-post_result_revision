@@ -19,6 +19,9 @@ static inline struct run *slab_alloc(struct slab *slab, uint object_size);
 static inline void slab_free(struct slab *slab, struct run *obj, uint object_size);
 static inline struct run *freelist_alloc(struct run **front_p, struct run **rear_p, uint object_size, uint8 *lazy_list_enabled, struct run *lazy_last);
 static inline void freelist_free(struct run **front_p, struct run **rear_p, uint object_size, struct run *obj);
+// mainly for debug purposes
+void print_kmem_cache_lazy(struct kmem_cache *cache, void (*slab_obj_printer)(void *));
+static void check_kmem_cache(struct kmem_cache *cache);
 
 #define MAX_SPACE(type)             (PGSIZE - sizeof(type))
 #define MAX_OBJS(type, object_size) (MAX_SPACE(type) / object_size)
@@ -82,35 +85,6 @@ void print_kmem_cache(struct kmem_cache *cache, void (*slab_obj_printer)(void *)
   release(&cache->lock);
 }
 
-void check_kmem_cache(struct kmem_cache *cache)
-{
-  struct list_head *node;
-  int idx = 0;
-  list_for_each(node, &cache->partial){
-    struct slab *entry = list_entry(node, struct slab, link);
-    if(entry->freelist_front == 0){
-      panic("should be full not partial");
-    }
-    idx++;
-  }
-  list_for_each(node, &cache->free){
-    struct slab *entry = list_entry(node, struct slab, link);
-    if(entry->freelist_front == 0){
-      panic("should be full not free");
-    }
-    idx++;
-  }
-  list_for_each(node, &cache->full){
-    struct slab *entry = list_entry(node, struct slab, link);
-    if(entry->freelist_front != 0 || entry->freelist_rear != 0){
-      panic("should not be full");
-    }
-  }
-  if(idx != cache->num_avail_slab){
-    panic("wrong num of slabs");
-  }
-}
-
 struct kmem_cache *kmem_cache_create(char *name, uint object_size)
 {
   if(object_size < sizeof(struct run) || object_size > MAX_SPACE(struct slab)){
@@ -139,7 +113,7 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
   cache->freelist_rear = OBJ_LAST_OFFSET(struct kmem_cache, object_size);
   struct run *last = GET_FREELIST_REAR(cache);
   last->next = NULL;
-  cache->lazy_list_enabled = 1;
+  cache->lazy_list_enabled = (cache->freelist_front < cache->freelist_rear) ? 1 : 0;
   // print info
   debug("[SLAB] New kmem_cache (name: %s, object size: %u bytes, at: %p, max objects per slab: %lu, support in cache obj: %lu) is created\n", name, object_size, cache, MAX_OBJS(struct slab, object_size), MAX_OBJS(struct kmem_cache, object_size));
   return cache;
@@ -309,7 +283,7 @@ static inline struct slab *slab_create(uint object_size){
   newslab->freelist_rear = OBJ_LAST_OFFSET(struct slab, object_size);
   struct run *last = GET_FREELIST_REAR(newslab);
   last->next = NULL;
-  newslab->lazy_list_enabled = 1;
+  newslab->lazy_list_enabled = (newslab->freelist_front < newslab->freelist_rear) ? 1 : 0;
   newslab->num_objs_in_use = 0;
   debug("[slab] slab_create: new slab (object size: %u bytes, at: %p) is created\n", object_size, newslab);
   return newslab;
@@ -381,6 +355,82 @@ static inline void freelist_free(struct run **front_p, struct run **rear_p, uint
   else                          // [WAS NONEMPTY] free to the next of the rear object
     (*rear_p)->next = obj; 
   *rear_p = obj;
+}
+
+
+// MAINLY FOR DEBUG PURPOSES
+
+void print_kmem_cache_lazy(struct kmem_cache *cache, void (*slab_obj_printer)(void *))
+{
+  acquire(&cache->lock);
+  debug("[SLAB] kmem_cache { name: %s, object_size: %u, at: %p, in_cache_obj: %lu }\n", cache->name, cache->object_size, cache, MAX_OBJS(struct kmem_cache, cache->object_size));
+  // print the info of the type "cache" slab, i.e., kmem_cache as a slab.
+  debug("[SLAB]    [ cache slabs ]\n[SLAB]        [ slab %p ] { freelist: %p, nxt: %p }\n", cache, GET_FREELIST_FRONT(cache), NULL); // nxt does not mean anything here
+  struct run *obj;
+  uint idx = 0;
+  OBJ_FOR_EACH(struct run, obj, struct kmem_cache, cache, cache->object_size){
+    debug("[SLAB]           [ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, obj->next);
+    slab_obj_printer((void*)obj);
+    debug("} }\n");
+    idx++;
+  }
+  // print the info of all type "partial" slabs.
+  struct list_head *node;
+  list_for_each(node, &cache->partial){
+    struct slab *entry = list_entry(node, struct slab, link);
+    debug("[SLAB]    [ partial slabs ]\n[SLAB]        [ slab %p ] { freelist: %p, nxt: %p }\n", entry, GET_FREELIST_FRONT(entry), entry->link.next);
+    idx = 0;
+    OBJ_FOR_EACH(struct run, obj, struct slab, entry, cache->object_size){
+      debug("[SLAB]           [ idx %u ] { addr: %p, as_ptr: %p, as_obj: {", idx, obj, ((struct run*)obj)->next);
+      slab_obj_printer((void*)obj);
+      debug("} }\n");
+      idx++;
+    }
+  }
+  // print the info of all type "free" slabs.
+  list_for_each(node, &cache->free){
+    struct slab *entry = list_entry(node, struct slab, link);
+    debug("[SLAB]    [ free slabs ]\n[SLAB]        [ slab %p ] { freelist: %p, nxt: %p }\n", entry, GET_FREELIST_FRONT(entry), entry->link.next);
+  }
+  // print the info of all type "full" slabs.
+  list_for_each(node, &cache->full){
+    struct slab *entry = list_entry(node, struct slab, link);
+    debug("[SLAB]    [ full slabs ]\n[SLAB]        [ slab %p ] { freelist: %p, nxt: %p }\n", entry, GET_FREELIST_FRONT(entry), entry->link.next);
+  }
+  debug("[SLAB] print_kmem_cache end\n");
+  release(&cache->lock);
+}
+
+void check_kmem_cache(struct kmem_cache *cache)
+{
+  if((cache->freelist_front == 0 || cache->freelist_rear == 0) && cache->freelist_front != cache->freelist_rear){
+    panic("weird list management in cache slab");
+  }
+  struct list_head *node;
+  int idx = 0;
+  list_for_each(node, &cache->partial){
+    struct slab *entry = list_entry(node, struct slab, link);
+    if(entry->freelist_front == 0){
+      panic("should be full not partial");
+    }
+    idx++;
+  }
+  list_for_each(node, &cache->free){
+    struct slab *entry = list_entry(node, struct slab, link);
+    if(entry->freelist_front == 0){
+      panic("should be full not free");
+    }
+    idx++;
+  }
+  list_for_each(node, &cache->full){
+    struct slab *entry = list_entry(node, struct slab, link);
+    if(entry->freelist_front != 0 || entry->freelist_rear != 0){
+      panic("should not be full");
+    }
+  }
+  if(idx != cache->num_avail_slab){
+    panic("wrong num of slabs");
+  }
 }
 
 
