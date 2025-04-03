@@ -4,6 +4,7 @@
         "file.h": "c",
         "defs.h": "c",
         "param.h": "c",
-        "slab.h": "c"
+        "slab.h": "c",
+        "spinlock.h": "c"
     }
 }
