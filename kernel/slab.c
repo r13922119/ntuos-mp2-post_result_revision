@@ -21,7 +21,7 @@ static inline struct run *freelist_alloc(struct run **front_p, struct run **rear
 static inline void freelist_free(struct run **front_p, struct run **rear_p, uint object_size, struct run *obj);
 // mainly for debug purposes
 void print_kmem_cache_lazy(struct kmem_cache *cache, void (*slab_obj_printer)(void *));
-static void check_kmem_cache(struct kmem_cache *cache);
+//static void check_kmem_cache(struct kmem_cache *cache);
 
 #define MAX_SPACE(type)             (PGSIZE - sizeof(type))
 #define MAX_OBJS(type, object_size) (MAX_SPACE(type) / object_size)
@@ -401,6 +401,7 @@ void print_kmem_cache_lazy(struct kmem_cache *cache, void (*slab_obj_printer)(vo
   release(&cache->lock);
 }
 
+/*
 void check_kmem_cache(struct kmem_cache *cache)
 {
   if((cache->freelist_front == 0 || cache->freelist_rear == 0) && cache->freelist_front != cache->freelist_rear){
@@ -432,6 +433,7 @@ void check_kmem_cache(struct kmem_cache *cache)
     panic("wrong num of slabs");
   }
 }
+*/
 
 
 /* OLD METHOD: DILIGENT and LIFO (now it is LAZY and FIFO)
