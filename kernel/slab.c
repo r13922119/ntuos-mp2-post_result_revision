@@ -122,6 +122,7 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
 
 void kmem_cache_destroy(struct kmem_cache *cache)
 {
+  acquire(&cache->lock);
   debug("[slab] kmem_cache_destroy: destroying kmem_cache %p\n", cache);
   // free every single page kalloc for all the slabs in the slab lists kmem_cache manages
   struct list_head *head[3] = {&cache->full, &cache->partial, &cache->free}; // we don't not need this because the three list_head full, partial, free are consecutive members in struct kmem_cache, but we want to be safer
@@ -134,6 +135,8 @@ void kmem_cache_destroy(struct kmem_cache *cache)
   }
   // free the page kalloc for kmem_cache itself
   list_del_init(&cache->partial); // this is kinda redundant since all slabs are destroyed
+  release(&cache->lock);
+  memset((void*)cache, 1, PGSIZE);  // for safety
   kfree((void*)cache);
 }
 
@@ -301,6 +304,7 @@ static inline struct slab *slab_create(uint object_size){
 static inline void slab_destroy(struct slab *oldslab){
   debug("[slab] slab_destroy: destroying slab %p\n", oldslab);
   list_del_init(&oldslab->link);
+  memset((void*)oldslab, 1, PGSIZE);  // for safety
   kfree((void*)oldslab);
 }
 
