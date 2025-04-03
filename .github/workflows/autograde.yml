@@ -1,11 +1,11 @@
 name: Autograding Tests
 'on':
     schedule:
-      - cron: '0 3 3 4 *'
+      - cron: '0 4 3 4 *'
 permissions:
   checks: write
   actions: read
-  contents: read
+  contents: write
 jobs:
   run-autograding-tests:
     runs-on: ubuntu-latest
