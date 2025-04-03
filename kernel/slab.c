@@ -114,7 +114,7 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
   cache->freelist_rear = OBJ_LAST_OFFSET(struct kmem_cache, object_size);
   struct run *last = GET_FREELIST_REAR(cache);
   last->next = NULL;
-  cache->lazy_list_enabled = (cache->freelist_front < cache->freelist_rear) ? 1 : 0;
+  cache->lazy_list_enabled = (cache->freelist_front < cache->freelist_rear) ? 1 : 0; // lazy_list_enabled can only be initialized to 1 when there are MAX_OBJS is at least 2 (otherwise the first object's next is NULL, not OBJ_CONTIG_NEXT)
   // print info
   debug("[SLAB] New kmem_cache (name: %s, object size: %u bytes, at: %p, max objects per slab: %lu, support in cache obj: %lu) is created\n", name, object_size, cache, MAX_OBJS(struct slab, object_size), MAX_OBJS(struct kmem_cache, object_size));
   return cache;
@@ -136,7 +136,7 @@ void kmem_cache_destroy(struct kmem_cache *cache)
   // free the page kalloc for kmem_cache itself
   list_del_init(&cache->partial); // this is kinda redundant since all slabs are destroyed
   release(&cache->lock);
-  memset((void*)cache, 1, PGSIZE);  // for safety
+  memset((void*)cache, 1, PGSIZE);  // not sure if filling with junk is helpful here (to catch dangling refs?)
   kfree((void*)cache);
 }
 
@@ -156,7 +156,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
     SET_FREELIST_FRONT(cache, front);
     SET_FREELIST_REAR(cache, rear);
     cache->lazy_list_enabled = lazy_list_enabled;
-    memset(obj, 0, cache->object_size);  // it has been done by freelist_alloc, but we do it again for safety
+    memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc, but we do it again for safety
     debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, cache, cache->name);
     // "kmem_cache as a slab" is always in "cache" type, i.e., no state changes within "full/partial/free"
     #ifdef MY_DEBUG
@@ -189,7 +189,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
     release(&cache->lock); // release the lock before return
     return NULL;
   }
-  memset(obj, 0, cache->object_size);  // it has been done by freelist_alloc and slab_alloc, but we do it again for safety
+  memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc and slab_alloc, but we do it again for safety
   debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, slab, cache->name);
   update_slab_state_after_alloc(cache, slab, oldstate); // update the slab state
   #ifdef MY_DEBUG
@@ -202,11 +202,11 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
 void kmem_cache_free(struct kmem_cache *cache, void *obj)
 {
   acquire(&cache->lock); // acquire the lock before modification
-  uint64 slab_type = PGROUNDDOWN((uint64)obj);
+  uint64 slab_type = PGROUNDDOWN((uint64)obj); // find the header where the obj is from
   // [CACHE] obj is in the slab of "cache" type, i.e., kmem_cache as a slab.
   if(slab_type == (uint64)cache){
     // free the object
-    memset(obj, 1, cache->object_size);  // it will be done by freelist_free, but we do it again for safety
+    memset((void*)obj, 1, cache->object_size);  // it will be done by freelist_free, but we do it again for safety
     struct run *front = (struct run*)GET_FREELIST_FRONT(cache);
     struct run *rear = (struct run*)GET_FREELIST_REAR(cache);
     freelist_free(&front, &rear, cache->object_size, obj);
@@ -223,7 +223,7 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
   struct slab *slab = (struct slab*)slab_type;
   enum STATE oldstate = (slab->freelist_front) ? PARTIAL : FULL;
   // Free the object.
-  memset(obj, 1, cache->object_size);  // it will be done by slab_free and freelist_free, but we do it again for safety
+  memset((void*)obj, 1, cache->object_size);  // it will be done by slab_free and freelist_free, but we do it again for safety
   slab_free(slab, obj, cache->object_size);
   debug("[SLAB] Free %p in slab %p (%s)\n", obj, slab, cache->name);
   update_slab_state_after_free(cache, slab, oldstate);
@@ -288,14 +288,14 @@ static inline struct slab *slab_create(uint object_size){
     return NULL;
   }
   memset((void*)newslab, 0, PGSIZE);
-  INIT_LIST_HEAD(&newslab->link);
+  INIT_LIST_HEAD(&newslab->link); // state is new here, not free/partial/full
   // originally we wrote SLAB_INIT_FREELIST(struct slab, newslab, object_size);  if(!newslab->freelist_front) { kfree((void*)newslab); return NULL; }
   // but to achieve true O(1), we adopt lazy list initialization instead.
   newslab->freelist_front = sizeof(struct slab);
   newslab->freelist_rear = OBJ_LAST_OFFSET(struct slab, object_size);
   struct run *last = GET_FREELIST_REAR(newslab);
   last->next = NULL;
-  newslab->lazy_list_enabled = (newslab->freelist_front < newslab->freelist_rear) ? 1 : 0;
+  newslab->lazy_list_enabled = (newslab->freelist_front < newslab->freelist_rear) ? 1 : 0; // lazy_list_enabled can only be initialized to 1 when there are MAX_OBJS is at least 2 (otherwise the first object's next is NULL, not OBJ_CONTIG_NEXT)
   newslab->num_objs_in_use = 0;
   debug("[slab] slab_create: new slab (object size: %u bytes, at: %p) is created\n", object_size, newslab);
   return newslab;
@@ -304,7 +304,7 @@ static inline struct slab *slab_create(uint object_size){
 static inline void slab_destroy(struct slab *oldslab){
   debug("[slab] slab_destroy: destroying slab %p\n", oldslab);
   list_del_init(&oldslab->link);
-  memset((void*)oldslab, 1, PGSIZE);  // for safety
+  memset((void*)oldslab, 1, PGSIZE);  // not sure if filling with junk is helpful here (to catch dangling refs?)
   kfree((void*)oldslab);
 }
 
@@ -322,12 +322,12 @@ static inline struct run *slab_alloc(struct slab *slab, uint object_size){
   SET_FREELIST_REAR(slab, rear);
   slab->lazy_list_enabled = lazy_list_enabled;
   slab->num_objs_in_use++;
-  memset(obj, 0, object_size);  // it has been done by freelist_alloc, but we do it again for safety
+  memset((void*)obj, 0, object_size);  // it has been done by freelist_alloc, but we do it again for safety
   return obj;
 }
 
 static inline void slab_free(struct slab *slab, struct run *obj, uint object_size){
-  memset(obj, 1, object_size);  // it will be done by freelist_free, but we do it again for safety
+  memset((void*)obj, 1, object_size);  // it will be done by freelist_free, but we do it again for safety
   struct run *front = (struct run*)GET_FREELIST_FRONT(slab);
   struct run *rear = (struct run*)GET_FREELIST_REAR(slab);
   freelist_free(&front, &rear, object_size, obj);
@@ -360,7 +360,7 @@ static inline struct run *freelist_alloc(struct run **front_p, struct run **rear
 
 static inline void freelist_free(struct run **front_p, struct run **rear_p, uint object_size, struct run *obj){ 
   // free object setup
-  memset(obj, 1, object_size);  // not sure if filling with junk is helpful here (to catch dangling refs?)
+  memset((void*)obj, 1, object_size);  // not sure if filling with junk is helpful here (to catch dangling refs?)
   obj->next = NULL;
   // free the object to the list
   if(*rear_p == NULL)           // [WAS EMPTY] r is the first object freed to the list
