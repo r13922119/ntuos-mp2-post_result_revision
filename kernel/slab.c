@@ -19,9 +19,10 @@ static inline struct run *slab_alloc(struct slab *slab, uint object_size);
 static inline void slab_free(struct slab *slab, struct run *obj, uint object_size);
 static inline struct run *freelist_alloc(struct run **front_p, struct run **rear_p, uint object_size, uint8 *lazy_list_enabled, struct run *lazy_last);
 static inline void freelist_free(struct run **front_p, struct run **rear_p, uint object_size, struct run *obj);
-// mainly for debug purposes
+#ifdef MY_DEBUG
 void print_kmem_cache_lazy(struct kmem_cache *cache, void (*slab_obj_printer)(void *));
-//static void check_kmem_cache(struct kmem_cache *cache);
+static void check_kmem_cache(struct kmem_cache *cache);
+#endif // MY_DEBUG
 
 #define MAX_SPACE(type)             (PGSIZE - sizeof(type))
 #define MAX_OBJS(type, object_size) (MAX_SPACE(type) / object_size)
@@ -155,7 +156,9 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
     memset(obj, 0, cache->object_size);  // it has been done by freelist_alloc, but we do it again for safety
     debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, cache, cache->name);
     // "kmem_cache as a slab" is always in "cache" type, i.e., no state changes within "full/partial/free"
-    //check_kmem_cache(cache);
+    #ifdef MY_DEBUG
+    check_kmem_cache(cache);
+    #endif // MY_DEBUG
     release(&cache->lock); // release the lock before return
     return (void*)obj;
   }
@@ -186,7 +189,9 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
   memset(obj, 0, cache->object_size);  // it has been done by freelist_alloc and slab_alloc, but we do it again for safety
   debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, slab, cache->name);
   update_slab_state_after_alloc(cache, slab, oldstate); // update the slab state
-  //check_kmem_cache(cache);
+  #ifdef MY_DEBUG
+  check_kmem_cache(cache);
+  #endif // MY_DEBUG
   release(&cache->lock); // release the lock before return
   return (void*)obj;
 }
@@ -205,7 +210,9 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
     SET_FREELIST_FRONT(cache, front);
     SET_FREELIST_REAR(cache, rear);
     debug("[SLAB] Free %p in slab %p (%s)\n[SLAB] End of free\n", obj, cache, cache->name);
-    //check_kmem_cache(cache);
+    #ifdef MY_DEBUG
+    check_kmem_cache(cache);
+    #endif // MY_DEBUG
     release(&cache->lock); // release the lock before return
     return;
   }
@@ -218,7 +225,9 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
   debug("[SLAB] Free %p in slab %p (%s)\n", obj, slab, cache->name);
   update_slab_state_after_free(cache, slab, oldstate);
   debug("[SLAB] End of free\n");
-  //check_kmem_cache(cache);
+  #ifdef MY_DEBUG
+  check_kmem_cache(cache);
+  #endif // MY_DEBUG
   release(&cache->lock); // release the lock before return
 }
 
@@ -360,6 +369,7 @@ static inline void freelist_free(struct run **front_p, struct run **rear_p, uint
 
 // MAINLY FOR DEBUG PURPOSES
 
+#ifdef MY_DEBUG
 void print_kmem_cache_lazy(struct kmem_cache *cache, void (*slab_obj_printer)(void *))
 {
   acquire(&cache->lock);
@@ -401,7 +411,6 @@ void print_kmem_cache_lazy(struct kmem_cache *cache, void (*slab_obj_printer)(vo
   release(&cache->lock);
 }
 
-/*
 void check_kmem_cache(struct kmem_cache *cache)
 {
   if((cache->freelist_front == 0 || cache->freelist_rear == 0) && cache->freelist_front != cache->freelist_rear){
@@ -433,7 +442,8 @@ void check_kmem_cache(struct kmem_cache *cache)
     panic("wrong num of slabs");
   }
 }
-*/
+#endif // MY_DEBUG
+
 
 
 /* OLD METHOD: DILIGENT and LIFO (now it is LAZY and FIFO)

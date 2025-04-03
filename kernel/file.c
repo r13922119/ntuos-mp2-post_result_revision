@@ -36,7 +36,9 @@ fileinit(void)
   debug("[FILE] fileinit\n"); // example of using debug, you can modify this
   // new approach
   file_cache = kmem_cache_create("file", sizeof(struct file));
-  //print_kmem_cache_lazy(file_cache, fileprint_metadata);
+  #ifdef MY_DEBUG
+  print_kmem_cache_lazy(file_cache, fileprint_metadata);
+  #endif // MY_DEBUG
   // old approach: initlock(&ftable.lock, "ftable");
 }
 
@@ -59,7 +61,9 @@ filealloc(void)
   if(f->ref == 0){
     f->ref = 1;
     release(&file_cache->lock);
-    //print_kmem_cache_lazy(file_cache, fileprint_metadata);
+    #ifdef MY_DEBUG
+    print_kmem_cache_lazy(file_cache, fileprint_metadata);
+    #endif // MY_DEBUG
     return f;
   }
   debug("[file] filealloc: the object %p still referenced or uninitialized to 0 when newly allocated\n", f);
@@ -119,7 +123,9 @@ fileclose(struct file *f)
   memset((void*)f, 1, sizeof(struct file));
   release(&file_cache->lock);
   kmem_cache_free(file_cache,f);
-  //print_kmem_cache_lazy(file_cache, fileprint_metadata);
+  #ifdef MY_DEBUG
+  print_kmem_cache_lazy(file_cache, fileprint_metadata);
+  #endif // MY_DEBUG
   /* old approach
   acquire(&ftable.lock);
   if(f->ref < 1)

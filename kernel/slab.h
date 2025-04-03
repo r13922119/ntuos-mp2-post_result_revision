@@ -9,8 +9,9 @@ struct run {
 };
 
 // 2 * PGSHIFT_FOR_SLAB + 1 + MAGIC_SLAB_PADDING = 32
-#define PGSHIFT_FOR_SLAB 12
+#define PGSHIFT_FOR_SLAB   12
 #define MAGIC_SLAB_PADDING 7
+//#define MY_DEBUG
 
 /**
  * struct slab - Represents a slab in the slab allocator.
@@ -69,9 +70,9 @@ struct slab
  */
 struct kmem_cache
 {
-  char name[32];        // Cache name (e.g., "file")
-  uint object_size;     // Size of a single object
-  struct spinlock lock; // Lock for cache management
+  char name[MP2_CACHE_MAX_NAME]; // Cache name (e.g., "file")
+  uint object_size;              // Size of a single object
+  struct spinlock lock;          // Lock for cache management
 
   // Slab list(s)
   struct list_head full;     // Completely allocated slabs (Optional)
@@ -131,9 +132,11 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj);
  */
 void print_kmem_cache(struct kmem_cache *cache, void (*print_fn)(void *));
 
+#ifdef MY_DEBUG
 /**
  * print_kmem_cache_lazy - Print the details of a kmem_cache while remaining list laziness.
  * @cache: The cache to print.
  * @print_fn: Function to print each object in the cache. If NULL (0) is given, will skip object printing part.
  */
 void print_kmem_cache_lazy(struct kmem_cache *cache, void (*print_fn)(void *));
+#endif // MY_DEBUG
