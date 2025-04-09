@@ -1,7 +1,7 @@
 name: Autograding Tests
 'on':
     schedule:
-      - cron: '38 19 9 4 *'
+      - cron: '50 19 9 4 *'
 permissions:
   checks: write
   actions: read
@@ -29,7 +29,7 @@ jobs:
           test/private.zip -k ${{ secrets.DECRYPT_PASSWORD }} -pbkdf2
 
       - name: Unzip Private Tests
-        run: cd test && unzip private.zip
+        run: apt update -y && apt install unzip -y && cd test && unzip private.zip
 
       - name: Run all the tests
         id: test-all
