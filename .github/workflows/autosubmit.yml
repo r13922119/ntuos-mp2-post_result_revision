@@ -1,7 +1,7 @@
 name: Autograding Tests
 'on':
     schedule:
-      - cron: '30 19 9 4 *'
+      - cron: '38 19 9 4 *'
 permissions:
   checks: write
   actions: read
@@ -20,7 +20,7 @@ jobs:
       - name: Update repo to the newest version
         run: |
           curl -O https://raw.githubusercontent.com/Shiritai/xv6-ntu-mp2/refs/heads/ntuos/mp2-submit/mp2.sh
-          sudo chmod +x mp2.sh
+          chmod +x mp2.sh
           ./mp2.sh update
 
       - name: Decrypt Private Tests
