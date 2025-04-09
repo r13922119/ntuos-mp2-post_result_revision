@@ -1,7 +1,7 @@
 name: Autograding Tests
 'on':
     schedule:
-      - cron: '30 20 9 4 *'
+      - cron: '10 21 9 4 *'
 permissions:
   checks: write
   actions: read
