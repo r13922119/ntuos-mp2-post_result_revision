@@ -1,7 +1,7 @@
 name: Autograding Tests
 'on':
     schedule:
-      - cron: '30 16 9 4 *'
+      - cron: '50 16 9 4 *'
 permissions:
   checks: write
   actions: read
@@ -40,6 +40,7 @@ jobs:
       - name: Submit mp2 grade
         id: submit-grade
         run: |
+          STUDENT_ID=$(cat ./student_id.txt)
           git config --global user.name "Student Bot $STUDENT_ID"
           git config --global user.email "student$STUDENT_ID@github.com"
 
