@@ -1,14 +1,15 @@
 name: Autograding Tests
 'on':
     schedule:
-      - cron: '35 18 9 4 *'
+      - cron: '30 19 9 4 *'
 permissions:
   checks: write
   actions: read
   contents: write
 jobs:
   run-autograding-tests:
-    runs-on: ubuntu-latest
+    # runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: 'github.actor != ''github-classroom[bot]'''
     steps:
       - name: Checkout code
