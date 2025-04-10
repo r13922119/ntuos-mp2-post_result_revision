@@ -1,7 +1,7 @@
 name: Autograding Tests
 'on':
     schedule:
-      - cron: '10 21 9 4 *'
+      - cron: '32 2 10 4 *'
 permissions:
   checks: write
   actions: read
@@ -30,6 +30,9 @@ jobs:
 
       - name: Unzip Private Tests
         run: cd test && unzip private.zip
+
+      - name: Pull Image
+        run: ./mp2.sh pull
 
       - name: Run all the tests
         id: test-all
