@@ -1,27 +1,21 @@
-name: Autograding Tests
+name: Scheduled Submit Workflow
 'on':
     schedule:
-      - cron: '20 6 10 4 *'
+      - cron: '0 0 10 4 *'
 permissions:
   checks: write
   actions: read
-  contents: write
+  contents: read
 jobs:
   run-autograding-tests:
     runs-on: ubuntu-latest
-    # runs-on: self-hosted
     if: 'github.actor != ''github-classroom[bot]'''
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Update repo to the newest version
-        run: |
-          curl -O https://raw.githubusercontent.com/Shiritai/xv6-ntu-mp2/refs/heads/ntuos/mp2-submit/mp2.sh
-          chmod +x mp2.sh
-          ./mp2.sh update
+      - name: Setup Docker Environment
+        run: ./mp2.sh pull
 
       - name: Decrypt Private Tests
         run: >
@@ -31,24 +25,33 @@ jobs:
       - name: Unzip Private Tests
         run: cd test && unzip private.zip
 
-      - name: Pull Image
-        run: ./mp2.sh pull
-
       - name: Run all the tests
         id: test-all
         run: |
           scripts/action_grader.sh
+
+          SCORE=$(cat score.txt)
+          STUDENT_ID=$(cat ./student_id.txt)
+          echo "SCORE=$SCORE" >> $GITHUB_ENV
+          echo "STUDENT_ID=$STUDENT_ID" >> $GITHUB_ENV
         shell: bash
 
-      - name: Submit mp2 grade
-        id: submit-grade
+      - name: Submit grade to TA's repo
         run: |
-          STUDENT_ID=$(cat ./student_id.txt)
-          git config --global user.name "Student Bot $STUDENT_ID"
-          git config --global user.email "student$STUDENT_ID@github.com"
+          git config --global user.name "Student Bot"
+          git config --global user.email "student@github.com"
 
-          REPORT=${STUDENT_ID}-report.txt
-          git add $REPORT
-          git commit -m "[TA] Submit MP2 grade for $STUDENT_ID"
+          git clone "https://$GITHUB_ACTOR:${{ secrets.TA_REPO_TOKEN }}@github.com/${{ secrets.TA_REPO }}.git" grades_repo
+          cd grades_repo
+
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "$STUDENT_ID,$SCORE,$TIMESTAMP" | tee -a $STUDENT_ID.txt
+
+          git add $STUDENT_ID.txt
+          git commit -m "Update grade for $STUDENT_ID"
           git push
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TA_REPO: ${{ secrets.TA_REPO }}
+          TA_REPO_TOKEN: ${{ secrets.TA_REPO_TOKEN }}

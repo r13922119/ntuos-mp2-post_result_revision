@@ -1,0 +1,5 @@
+== Test private/mp2-3 (5%) ==
+private/mp2-3: FAIL (0/5) (58.5s) 
+    Cannot allocate new slab when free or partial slabs exist
+    QEMU output saved to out/private/mp2-3.out.failed
+Score: 0/5

@@ -1,0 +1,4 @@
+== Test private/mp2-0 (5%) ==
+private/mp2-0: OK (5/5) (13.4s) 
+
+Score: 5/5

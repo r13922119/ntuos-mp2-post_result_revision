@@ -1,11 +1,11 @@
 name: Autograding Tests
 'on':
     schedule:
-      - cron: '0 4 3 4 *'
+      - cron: '0 0 31 3 *'
 permissions:
   checks: write
   actions: read
-  contents: write
+  contents: read
 jobs:
   run-autograding-tests:
     runs-on: ubuntu-latest
@@ -13,12 +13,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Update repo to the newest version
-        run: |
-          curl -O https://raw.githubusercontent.com/Shiritai/xv6-ntu-mp2/refs/heads/ntuos/mp2-submit/mp2.sh
-          sudo chmod +x mp2.sh
-          ./mp2.sh update
 
       - name: Setup Docker Environment
         run: ./mp2.sh pull
@@ -33,26 +27,5 @@ jobs:
 
       - name: Run all the tests
         id: test-all
-        run: |
-          scripts/action_grader.sh
-
-          SCORE=$(cat score.txt || 0)
-          STUDENT_ID=$(cat ./student_id.txt)
-          echo "SCORE=$SCORE" >> $GITHUB_ENV
-          echo "STUDENT_ID=$STUDENT_ID" >> $GITHUB_ENV
-        shell: bash
-
-      - name: Record grade into your repo
-        run: |
-          git config --global user.name "Student Bot $STUDENT_ID"
-          git config --global user.email "student$STUDENT_ID@github.com"
-
-          REPORT=${STUDENT_ID}-report.txt
-
-          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          echo "$STUDENT_ID,$SCORE,$TIMESTAMP" | tee -a $REPORT
-
-          git add $REPORT
-          git commit -m "[TA] Update grade for $STUDENT_ID"
-          git push
+        run: scripts/action_grader.sh
         shell: bash

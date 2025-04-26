@@ -1,0 +1,4 @@
+== Test public/mp2-2 (3%) ==
+public/mp2-2: OK (3/3) (8.3s) 
+
+Score: 3/3

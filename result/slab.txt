@@ -1,0 +1,4 @@
+== Test Slab check (Max [3(+5): slab structure (with bonus)] + [2: max objects]) (10%) ==
+Slab check (Max [3(+5): slab structure (with bonus)] + [2: max objects]): OK (10/10) (9.8s) 
+
+Score: 10/10

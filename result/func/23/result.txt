@@ -1,0 +1,1 @@
+Score for func (case 23): 3

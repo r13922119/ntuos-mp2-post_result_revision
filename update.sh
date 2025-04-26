@@ -27,6 +27,7 @@ declare -a FILES=(
     # basic
     "version"
     "mp2.sh"
+    "scripts/final_grader.sh"
     "scripts/action_grader.sh"
     "scripts/pre-commit"
     "scripts/pre-push"
@@ -144,6 +145,13 @@ function download_and_replace() {
 
 trap 'echo "Script interrupted"; cleanup; exit 1' INT TERM
 
-for file in "${FILES[@]}"; do
-    download_and_replace "$file"
-done
+export -f download_and_replace
+export SCRIPT_DIR=$(pwd)
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    cpus=$(sysctl -n hw.ncpu)
+else
+    cpus=$(nproc)
+fi
+
+printf '%s\n' "${FILES[@]}" | xargs -P "$cpus" -I {} bash -c 'download_and_replace "{}"'

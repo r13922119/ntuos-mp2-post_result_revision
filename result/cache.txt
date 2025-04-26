@@ -1,0 +1,4 @@
+== Test In-cache fragmentation (bonus) (10%) ==
+In-cache fragmentation (bonus): OK (10/10) (8.4s) 
+
+Score: 10/10
