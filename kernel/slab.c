@@ -24,13 +24,14 @@ void print_kmem_cache_lazy(struct kmem_cache *cache, void (*slab_obj_printer)(vo
 static void check_kmem_cache(struct kmem_cache *cache);
 #endif // MY_DEBUG
 
-#define MAX_SPACE(type)                            (PGSIZE - sizeof(type))
+#define MAX_SPACE(type)                            ((PGSIZE - sizeof(type)) ? (PGSIZE - sizeof(type)) : 0)
 #define MAX_OBJS(type, object_size)                (MAX_SPACE(type) / object_size)
 // object address computation (type: char*)
-#define OBJ_LAST_OFFSET(header_type, object_size)  (sizeof(header_type) + (MAX_OBJS(header_type, object_size) - 1) * object_size)
-#define OBJ_START(header_type, header)             ((char*)(header) + sizeof(header_type))
-#define OBJ_LAST(header_type, header, object_size) ((char*)(header) + OBJ_LAST_OFFSET(header_type, object_size))
-#define OBJ_END(header)                            ((char*)(header) + PGSIZE)
+#define OBJ_FIRST_OFFSET(header_type, object_size) ((MAX_OBJS(header_type, object_size)) ? sizeof(header_type) : 0)
+#define OBJ_LAST_OFFSET(header_type, object_size)  ((MAX_OBJS(header_type, object_size)) ? (sizeof(header_type) + (MAX_OBJS(header_type, object_size) - 1) * object_size) : 0)
+#define OBJ_LAST(header_type, header, object_size) ((MAX_OBJS(header_type, object_size)) ? (char*)(header) + OBJ_LAST_OFFSET(header_type, object_size) : 0)
+#define OBJ_SPACE_START(header_type, header)       ((char*)(header) + sizeof(header_type))
+#define OBJ_SPACE_END(header)                      ((char*)(header) + PGSIZE)
 #define OBJ_CONTIG_NEXT(object_addr, object_size)  ((char*)(object_addr) + (object_size))
 // page offset & address translation
 #define GET_ADDR(base_addr, offset)                ((char*)(base_addr) + (offset))
@@ -42,11 +43,24 @@ static void check_kmem_cache(struct kmem_cache *cache);
 #define SET_FREELIST_REAR(s, objrun)   ((s)->freelist_rear = (((char*)(objrun) > (char*)(s)) ? (uint64)GET_OFFSET(s, objrun) : 0))
 // contiguous object traversal
 #define OBJ_FOR_EACH(objrun_type, objrun, header_type, header, object_size) \
-        for(objrun = (objrun_type*)(OBJ_START(header_type, header)); \
-            OBJ_CONTIG_NEXT(objrun, object_size) <= OBJ_END(header); \
+        for(objrun = (objrun_type*)(OBJ_SPACE_START(header_type, header)); \
+            OBJ_CONTIG_NEXT(objrun, object_size) <= OBJ_SPACE_END(header); \
             objrun = (objrun_type*)(OBJ_CONTIG_NEXT(objrun, object_size)))
-// allocate and free and update the freelist
-#define ALLOC_AND_UPDATE_LIST(obj, header_type, header, object_size) \
+// init, allocate, and free (and update) the freelist
+// for init, note:
+// [1] originally we wrote, say, SLAB_INIT_FREELIST(header_type, header, object_size);  if(!(header)->freelist_front) { kfree((void*)(header)); return NULL; }
+// but to achieve true O(1), we adopt lazy list initialization instead.
+// [2] lazy_list_enabled can only be initialized to 1 when there are MAX_OBJS is at least 2 (otherwise the first object's next is NULL, not OBJ_CONTIG_NEXT)
+#define INIT_FREELIST(header_type, header, object_size) \
+    { \
+        (header)->freelist_front = OBJ_FIRST_OFFSET(header_type, object_size); \
+        (header)->freelist_rear = OBJ_LAST_OFFSET(header_type, object_size); \
+        struct run *last = GET_FREELIST_REAR(header); \
+        if(last) \
+          last->next = NULL; \
+        (header)->lazy_list_enabled = ((header)->freelist_front < (header)->freelist_rear) ? 1 : 0; \
+    }
+#define ALLOC_AND_UPDATE_FREELIST(obj, header_type, header, object_size) \
     { \
         struct run *front = (struct run*)GET_FREELIST_FRONT(header); \
         struct run *rear = (struct run*)GET_FREELIST_REAR(header); \
@@ -57,7 +71,7 @@ static void check_kmem_cache(struct kmem_cache *cache);
         SET_FREELIST_REAR(header, rear); \
         (header)->lazy_list_enabled = lazy_list_enabled; \
     }
-#define FREE_AND_UPDATE_LIST(obj, header_type, header, object_size) \
+#define FREE_AND_UPDATE_FREELIST(obj, header_type, header, object_size) \
     { \
         struct run *front = (struct run*)GET_FREELIST_FRONT(header); \
         struct run *rear = (struct run*)GET_FREELIST_REAR(header); \
@@ -126,13 +140,7 @@ struct kmem_cache *kmem_cache_create(char *name, uint object_size)
   INIT_LIST_HEAD(&cache->free);
   cache->num_avail_slab = 0;
   // make a freelist for "kmem_cache as a slab", i.e., to utilize the rest of the page since we call kalloc for only a small struct kmem_cache, we make kmem_cache a special slab. we say it is of type "cache" (which does not belong to full/partial/free)
-  // originally we wrote SLAB_INIT_FREELIST(struct kmem_cache, cache, object_size);  if(!cache->freelist_front) { kfree((void*)cache); return NULL; }
-  // but to achieve true O(1), we adopt lazy list initialization instead.
-  cache->freelist_front = sizeof(struct kmem_cache);
-  cache->freelist_rear = OBJ_LAST_OFFSET(struct kmem_cache, object_size);
-  struct run *last = GET_FREELIST_REAR(cache);
-  last->next = NULL;
-  cache->lazy_list_enabled = (cache->freelist_front < cache->freelist_rear) ? 1 : 0; // lazy_list_enabled can only be initialized to 1 when there are MAX_OBJS is at least 2 (otherwise the first object's next is NULL, not OBJ_CONTIG_NEXT)
+  INIT_FREELIST(struct kmem_cache, cache, object_size);
   // print info
   debug("[SLAB] New kmem_cache (name: %s, object size: %u bytes, at: %p, max objects per slab: %lu, support in cache obj: %lu) is created\n", name, object_size, cache, MAX_OBJS(struct slab, object_size), MAX_OBJS(struct kmem_cache, object_size));
   return cache;
@@ -166,8 +174,8 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
   // [CACHE] is the "cache" type slab, i.e., kmem_cache as a slab, not full yet?
   if(cache->freelist_front){
     // allocate one object to "kmem_cache as a slab"
-    ALLOC_AND_UPDATE_LIST(obj, struct kmem_cache, cache, cache->object_size);
-    memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc in ALLOCATE, but we do it again for safety
+    ALLOC_AND_UPDATE_FREELIST(obj, struct kmem_cache, cache, cache->object_size);
+    memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc in ALLOC_AND_UPDATE_FREELIST, but we do it again for safety
     debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, cache, cache->name);
     // "kmem_cache as a slab" is always in "cache" type, i.e., no state changes within "full/partial/free"
     #ifdef MY_DEBUG
@@ -186,6 +194,10 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
     slab = list_first_entry(&cache->free, struct slab, link);
     oldstate = FREE;
   }else{                               // [NEW] "kmem_cache as a slab" is full and no "partial/free" slabs, i.e., all slabs are full. create a new slab.
+    #ifdef MY_DEBUG
+    if(cache->num_avail_slab)
+      panic("num_avail_slab does not align with free + partial list");
+    #endif // MY_DEBUG
     if(!(slab = slab_create(cache->object_size))){ // the slab is not linked to any list here.
       debug("[slab] kmem_cache_alloc: failed to allocate a new slab for cache %s\n", cache->name);
       release(&cache->lock); // release the lock before return
@@ -200,7 +212,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
     release(&cache->lock); // release the lock before return
     return NULL;
   }
-  memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc in ALLOCATE and slab_alloc, but we do it again for safety
+  memset((void*)obj, 0, cache->object_size);  // it has been done by freelist_alloc in ALLOC_AND_UPDATE_FREELIST and slab_alloc, but we do it again for safety
   debug("[SLAB] Object %p in slab %p (%s) is allocated and initialized\n", obj, slab, cache->name);
   update_slab_state_after_alloc(cache, slab, oldstate); // update the slab state
   #ifdef MY_DEBUG
@@ -218,7 +230,7 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj)
   if(slab_type == (uint64)cache){
     // free the object
     memset((void*)obj, 1, cache->object_size);  // it will be done by freelist_free, but we do it again for safety
-    FREE_AND_UPDATE_LIST(obj, struct kmem_cache, cache, cache->object_size);
+    FREE_AND_UPDATE_FREELIST(obj, struct kmem_cache, cache, cache->object_size);
     debug("[SLAB] Free %p in slab %p (%s)\n[SLAB] End of free\n", obj, cache, cache->name);
     #ifdef MY_DEBUG
     check_kmem_cache(cache);
@@ -263,9 +275,11 @@ static inline void update_slab_state_after_alloc(struct kmem_cache *cache, struc
 
 static inline void update_slab_state_after_free(struct kmem_cache *cache, struct slab *slab, enum STATE oldstate){
   // update the slab state from {partial, full} to {dead, free, partial}, denoted ([from],[to]). other transitions are impossible for a freeing.
-  // enum STATE newstate = ...? (here we note that when avail slabs are enough, i.e., + this one > MIN_AVAIL_SLAB, kfree more aggressively)
+  // enum STATE newstate = ...? (here we note that when avail slabs are enough, i.e., including this one > MIN_AVAIL_SLAB, kfree more aggressively)
   if(!slab->num_objs_in_use){
-    if(cache->num_avail_slab + 1 > MP2_MIN_AVAIL_SLAB){       // DEAD;
+    if((oldstate == FULL && cache->num_avail_slab + 1 > MP2_MIN_AVAIL_SLAB)
+    || (oldstate == PARTIAL && cache->num_avail_slab > MP2_MIN_AVAIL_SLAB)){       
+                                                              // DEAD;
       slab_destroy(slab);                       // (partial/full,dead) ~> slab_destroy, i.e., kalloc() page freed
       debug("[SLAB] slab %p (%s) is freed due to save memory\n", slab, cache->name);
       if(oldstate == PARTIAL)
@@ -296,13 +310,7 @@ static inline struct slab *slab_create(uint object_size){
   }
   memset((void*)newslab, 0, PGSIZE);
   INIT_LIST_HEAD(&newslab->link); // state is new here, not free/partial/full
-  // originally we wrote SLAB_INIT_FREELIST(struct slab, newslab, object_size);  if(!newslab->freelist_front) { kfree((void*)newslab); return NULL; }
-  // but to achieve true O(1), we adopt lazy list initialization instead.
-  newslab->freelist_front = sizeof(struct slab);
-  newslab->freelist_rear = OBJ_LAST_OFFSET(struct slab, object_size);
-  struct run *last = GET_FREELIST_REAR(newslab);
-  last->next = NULL;
-  newslab->lazy_list_enabled = (newslab->freelist_front < newslab->freelist_rear) ? 1 : 0; // lazy_list_enabled can only be initialized to 1 when there are MAX_OBJS is at least 2 (otherwise the first object's next is NULL, not OBJ_CONTIG_NEXT)
+  INIT_FREELIST(struct slab, newslab, object_size);
   newslab->num_objs_in_use = 0;
   debug("[slab] slab_create: new slab (object size: %u bytes, at: %p) is created\n", object_size, newslab);
   return newslab;
@@ -321,15 +329,15 @@ static inline struct run *slab_alloc(struct slab *slab, uint object_size){
     return NULL;
   }
   struct run *obj;
-  ALLOC_AND_UPDATE_LIST(obj, struct slab, slab, object_size);
+  ALLOC_AND_UPDATE_FREELIST(obj, struct slab, slab, object_size);
   slab->num_objs_in_use++;
-  memset((void*)obj, 0, object_size);  // it has been done by freelist_alloc in ALLOCATE, but we do it again for safety
+  memset((void*)obj, 0, object_size);  // it has been done by freelist_alloc in ALLOC_AND_UPDATE_FREELIST, but we do it again for safety
   return obj;
 }
 
 static inline void slab_free(struct slab *slab, struct run *obj, uint object_size){
   memset((void*)obj, 1, object_size);  // it will be done by freelist_free, but we do it again for safety
-  FREE_AND_UPDATE_LIST(obj, struct slab, slab, object_size);
+  FREE_AND_UPDATE_FREELIST(obj, struct slab, slab, object_size);
   slab->num_objs_in_use--;
 }
 
@@ -452,7 +460,7 @@ void check_kmem_cache(struct kmem_cache *cache)
 #define SLAB_INIT_FREELIST(header_type, header, obj_size) \
     { \
         (header)->freelist_front = 0; \
-        SET_FREELIST_FRONT(header, freelist_freerange(GET_FREELIST_FRONT(header), (void*)OBJ_START(header_type, header), (void*)OBJ_END(header), obj_size)); \
+        SET_FREELIST_FRONT(header, freelist_freerange(GET_FREELIST_FRONT(header), (void*)OBJ_SPACE_START(header_type, header), (void*)OBJ_SPACE_END(header), obj_size)); \
     }
 
 struct run *freelist_freerange(struct run *freelist, void *obj_start, void *obj_end, uint object_size){
