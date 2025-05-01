@@ -46,7 +46,9 @@ fileinit(void)
 struct file*
 filealloc(void)
 {
+  acquire(&file_cache->lock);
   debug("[FILE] filealloc\n"); // example of using debug, you can modify this
+  release(&file_cache->lock);
   struct file *f;
 
   // new approach
